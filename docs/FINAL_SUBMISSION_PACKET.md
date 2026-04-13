@@ -92,7 +92,7 @@ README, screenshots, demo script, and submission answers are already prepared.
 - Repository URL: `https://github.com/richard7463/pacifica-risk-room`
 - Pull Request URL: `not applicable, standalone repository`
 - Demo Video URL: `add your uploaded video link`
-- Live Demo URL: `add deployed Vercel URL`
+- Live Demo URL: `https://pacifica-risk-room.vercel.app`
 
 ## Files Included In This Submission Packet
 
