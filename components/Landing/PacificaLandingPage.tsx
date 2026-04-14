@@ -29,13 +29,13 @@ const PROOF_ITEMS = [
     icon: Route,
   },
   {
-    title: "Risk decision engine",
-    body: "Health score, liquidation buffer, exposure/equity, and recommended action.",
+    title: "Pre-trade scenario lab",
+    body: "Simulate adds, reductions, collateral top-ups, and rotations before any order goes live.",
     icon: ShieldAlert,
   },
   {
-    title: "Agent-readable workflow",
-    body: "A reusable skill so AI assistants can check risk before suggesting leverage.",
+    title: "Watch and agent workflow",
+    body: "Saved desks, alert thresholds, and a reusable skill so AI assistants can check risk before suggesting leverage.",
     icon: FileCode2,
   },
 ] as const;
@@ -200,9 +200,9 @@ export default function PacificaLandingPage() {
             Account health for traders and AI agents.
           </h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-[#c7d0c6]">
-            A Pacifica-native risk layer that checks liquidation buffer, exposure
-            versus equity, funding cost, and safe next action before anyone adds
-            leverage.
+            A Pacifica-native decision layer that scores live account health,
+            simulates what-if trades, builds de-risk plans, and saves desks into a
+            repeatable watch workflow before anyone adds leverage.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -265,19 +265,19 @@ export default function PacificaLandingPage() {
         <AudienceCard
           icon={WalletCards}
           title="For traders"
-          body="Open the app, paste a Pacifica wallet or subaccount, and see whether the account is safe before adding leverage."
+          body="Review the live desk, test a trade in Scenario Lab, and pick the cleanest action path before sending an order."
           accent="#65f3e0"
         />
         <AudienceCard
           icon={Bot}
           title="For agents"
-          body="Install skill.md so AI assistants can call the Account Health API before giving Pacifica leverage guidance."
+          body="Install skill.md so AI assistants can check risk, refuse unsafe leverage, and stay aligned with the same product logic."
           accent="#d8ff6a"
         />
         <AudienceCard
           icon={DatabaseZap}
           title="For builders"
-          body="Use one API response for health score, account posture, positions, funding, and market context."
+          body="Use one API response for live posture, then layer on scenario simulation, planning, and alert workflows in the app shell."
           accent="#ff7a59"
         />
       </section>

@@ -1,21 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  BellRing,
+  BookmarkPlus,
   BookOpen,
   CandlestickChart,
+  ChevronRight,
   CircleAlert,
+  Copy,
   ExternalLink,
+  FlaskConical,
   Loader2,
   Radar,
   RefreshCcw,
   ShieldCheck,
   ShieldX,
+  Target,
+  Trash2,
   Waves,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,8 +35,21 @@ import type {
   PacificaRiskStatus,
   PacificaTradeHistoryItem,
 } from "@/lib/pacificaRiskRoom";
+import {
+  DEFAULT_SCENARIO_INPUT,
+  buildPlannerOptions,
+  buildScenarioResult,
+  computeHealthMetrics,
+  evaluateWatchItem,
+  type PacificaPlannerOption,
+  type PacificaScenarioAction,
+  type PacificaScenarioInput,
+  type PacificaScenarioResult,
+  type PacificaWatchItem,
+} from "@/lib/pacificaDecision";
 
 const DEFAULT_SYMBOLS = "BTC, ETH, SOL, XRP, HYPE, PUMP";
+const WATCH_STORAGE_KEY = "pacifica-risk-room.watch-items";
 
 const SOURCE_LABELS = {
   live: "Live",
@@ -37,14 +57,14 @@ const SOURCE_LABELS = {
   none: "Unavailable",
 } as const;
 
-const NAV_ITEMS = [
-  { label: "Health", href: "#health", icon: ShieldCheck },
-  { label: "Position", href: "#position", icon: Activity },
-  { label: "Action", href: "#action", icon: CircleAlert },
-  { label: "Markets", href: "#markets", icon: CandlestickChart },
-  { label: "Funding", href: "#funding", icon: Waves },
-  { label: "Data", href: "#data", icon: BookOpen },
+const WORKSPACE_TABS = [
+  { id: "overview", label: "Desk", icon: ShieldCheck },
+  { id: "scenario", label: "Scenario", icon: FlaskConical },
+  { id: "planner", label: "Planner", icon: Target },
+  { id: "watch", label: "Watch", icon: BellRing },
 ] as const;
+
+type WorkspaceId = (typeof WORKSPACE_TABS)[number]["id"];
 
 const RISK_TONES: Record<
   PacificaRiskStatus,
@@ -59,38 +79,39 @@ const RISK_TONES: Record<
 > = {
   stable: {
     badge: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
-    border: "border-emerald-400/30",
-    glow: "shadow-[0_30px_120px_rgba(16,185,129,0.16)]",
+    border: "border-emerald-400/28",
+    glow: "shadow-[0_24px_90px_rgba(16,185,129,0.14)]",
     icon: ShieldCheck,
     label: "Healthy",
     text: "text-emerald-200",
   },
   watch: {
     badge: "border-amber-400/25 bg-amber-400/10 text-amber-200",
-    border: "border-amber-400/30",
-    glow: "shadow-[0_30px_120px_rgba(245,158,11,0.15)]",
+    border: "border-amber-400/25",
+    glow: "shadow-[0_24px_90px_rgba(245,158,11,0.14)]",
     icon: AlertTriangle,
     label: "Watch",
     text: "text-amber-200",
   },
   critical: {
-    badge: "border-rose-400/30 bg-[#ff7a59]/10 text-[#ffd2c6]",
-    border: "border-[#ff7a59]/36",
-    glow: "shadow-[0_30px_120px_rgba(244,63,94,0.18)]",
+    badge: "border-[#ff7a59]/28 bg-[#ff7a59]/10 text-[#ffd2c6]",
+    border: "border-[#ff7a59]/28",
+    glow: "shadow-[0_24px_90px_rgba(255,122,89,0.14)]",
     icon: ShieldX,
     label: "High risk",
     text: "text-[#ffd2c6]",
   },
 };
 
+interface WatchSnapshotState {
+  loading: boolean;
+  error: string;
+  payload: PacificaRiskRoomResponse | null;
+}
+
 const compactUsdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
-const compactNumberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
@@ -157,6 +178,10 @@ function positionSideLabel(side: string) {
   return side || "Position";
 }
 
+function formatSigned(value: number, suffix = "") {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(0)}${suffix}`;
+}
+
 function StatusPill({
   children,
   tone = "default",
@@ -171,7 +196,7 @@ function StatusPill({
         tone === "soft"
           ? "border-[#f7f1df]/12 bg-white/[0.04] text-[#cbd6ce]"
           : tone === "risk"
-            ? "border-rose-400/30 bg-[#ff7a59]/10 text-[#ffd2c6]"
+            ? "border-[#ff7a59]/28 bg-[#ff7a59]/10 text-[#ffd2c6]"
             : "border-[#65f3e0]/25 bg-[#65f3e0]/10 text-[#bafdf4]",
       )}
     >
@@ -180,51 +205,71 @@ function StatusPill({
   );
 }
 
-function Panel({
-  id,
+function ShellPane({
   eyebrow,
   title,
-  body,
   action,
   children,
   className,
 }: {
-  id?: string;
   eyebrow: string;
   title: string;
-  body?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <section
-      id={id}
       className={cn(
-        "grain rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95 p-5 shadow-[0_28px_100px_rgba(0,0,0,0.34)] md:p-6",
+        "grain rounded-[30px] border border-[#f7f1df]/12 bg-[#0c1715]/95 shadow-[0_28px_100px_rgba(0,0,0,0.3)]",
         className,
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 border-b border-[#f7f1df]/10 px-5 py-4">
         <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-[#7f9189]">
+          <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
             {eyebrow}
           </div>
-          <h2 className="font-display mt-2 text-[28px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+          <div className="font-display mt-2 text-[28px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
             {title}
-          </h2>
-          {body ? (
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-[#a8b6ac]">{body}</p>
-          ) : null}
+          </div>
         </div>
         {action}
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="p-5">{children}</div>
     </section>
   );
 }
 
-function StatTile({
+function WorkspaceTabButton({
+  label,
+  active,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  icon: typeof ShieldCheck;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 rounded-[18px] border px-4 py-3 text-left transition",
+        active
+          ? "border-[#65f3e0]/28 bg-[#65f3e0]/10 text-[#f7f1df]"
+          : "border-transparent text-[#a8b6ac] hover:border-[#f7f1df]/12 hover:bg-white/[0.04] hover:text-[#f7f1df]",
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="text-sm font-medium">{label}</span>
+    </button>
+  );
+}
+
+function HeaderMetric({
   label,
   value,
   detail,
@@ -232,115 +277,349 @@ function StatTile({
 }: {
   label: string;
   value: string;
-  detail?: string;
+  detail: string;
   tone?: "default" | "good" | "warn" | "danger";
 }) {
   return (
-    <article
+    <div
       className={cn(
-        "rounded-[24px] border bg-[#101b18] p-4",
+        "rounded-[22px] border bg-[#101b18] px-4 py-4",
         tone === "good"
           ? "border-emerald-400/20"
           : tone === "warn"
             ? "border-amber-400/20"
             : tone === "danger"
-              ? "border-[#ff7a59]/28"
+              ? "border-[#ff7a59]/24"
               : "border-[#f7f1df]/12",
       )}
     >
       <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
         {label}
       </div>
-      <div className="font-display mt-3 text-[34px] font-semibold leading-none tracking-[-0.065em] text-[#f7f1df]">
+      <div className="font-display mt-3 text-[34px] font-semibold leading-none tracking-[-0.07em] text-[#f7f1df]">
         {value}
       </div>
-      {detail ? <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">{detail}</div> : null}
-    </article>
-  );
-}
-
-function ProgressBar({
-  value,
-  dangerAt,
-}: {
-  value: number;
-  dangerAt: number;
-}) {
-  const pct = Math.max(4, Math.min(100, (value / dangerAt) * 100));
-  return (
-    <div className="h-3 rounded-full bg-white/10">
-      <div
-        className={cn(
-          "h-full rounded-full",
-          value < dangerAt * 0.6
-            ? "bg-rose-400"
-            : value < dangerAt
-              ? "bg-amber-300"
-              : "bg-emerald-300",
-        )}
-        style={{ width: `${pct}%` }}
-      />
+      <div className="mt-2 text-sm text-[#a8b6ac]">{detail}</div>
     </div>
   );
 }
 
-function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
-  if (values.length < 2) {
-    return (
-      <div className="flex h-20 items-center justify-center rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-        No history
-      </div>
-    );
-  }
-
-  const width = 280;
-  const height = 80;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const points = values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * width;
-      const y = height - ((value - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
+function ScenarioActionButton({
+  label,
+  value,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: PacificaScenarioAction;
+  active: boolean;
+  onClick: (value: PacificaScenarioAction) => void;
+}) {
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-20 w-full overflow-visible"
-      preserveAspectRatio="none"
+    <button
+      type="button"
+      onClick={() => onClick(value)}
+      className={cn(
+        "rounded-full border px-4 py-2 text-sm font-medium transition",
+        active
+          ? "border-[#65f3e0]/30 bg-[#65f3e0]/10 text-[#bafdf4]"
+          : "border-[#f7f1df]/12 bg-[#101b18] text-[#a8b6ac] hover:text-[#f7f1df]",
+      )}
     >
-      <polyline
-        fill="none"
-        stroke={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="4"
-        points={points}
-      />
-    </svg>
+      {label}
+    </button>
   );
 }
 
-function NavRail() {
+function ComparisonCell({
+  label,
+  current,
+  projected,
+  delta,
+  tone = "default",
+}: {
+  label: string;
+  current: string;
+  projected: string;
+  delta: string;
+  tone?: "default" | "good" | "warn" | "danger";
+}) {
   return (
-    <nav className="space-y-1.5">
-      {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
-        <a
-          key={label}
-          href={href}
-          className="group flex items-center justify-between rounded-[18px] border border-transparent px-3 py-3 text-sm text-[#a8b6ac] transition hover:border-[#f7f1df]/12 hover:bg-white/[0.04] hover:text-[#f7f1df]"
+    <div
+      className={cn(
+        "rounded-[22px] border bg-[#101b18] px-4 py-4",
+        tone === "good"
+          ? "border-emerald-400/20"
+          : tone === "warn"
+            ? "border-amber-400/20"
+            : tone === "danger"
+              ? "border-[#ff7a59]/24"
+              : "border-[#f7f1df]/12",
+      )}
+    >
+      <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+        {label}
+      </div>
+      <div className="mt-3 flex items-end justify-between gap-4">
+        <div>
+          <div className="text-xs text-[#7f9189]">Current</div>
+          <div className="font-display mt-1 text-2xl font-semibold tracking-[-0.05em] text-[#f7f1df]">
+            {current}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-[#7f9189]">Projected</div>
+          <div className="font-display mt-1 text-2xl font-semibold tracking-[-0.05em] text-[#f7f1df]">
+            {projected}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 text-sm text-[#a8b6ac]">Delta {delta}</div>
+    </div>
+  );
+}
+
+function MarketListRow({
+  market,
+  active,
+  onClick,
+}: {
+  market: PacificaRiskRoomResponse["marketSnapshot"][number];
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full rounded-[20px] border px-4 py-3 text-left transition",
+        active
+          ? "border-[#65f3e0]/28 bg-[#65f3e0]/10"
+          : "border-[#f7f1df]/12 bg-[#101b18] hover:border-[#f7f1df]/20",
+      )}
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-[#f7f1df]">{market.symbol}</div>
+          <div className="mt-1 text-xs text-[#7f9189]">{market.maxLeverage}x max</div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-semibold text-[#f7f1df]">{formatPrice(market.mark)}</div>
+          <div
+            className={cn(
+              "mt-1 text-xs",
+              market.change24hPct >= 0 ? "text-emerald-300" : "text-rose-300",
+            )}
+          >
+            {formatPct(market.change24hPct)}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function WatchRow({
+  item,
+  active,
+  score,
+  alertsCount,
+  onClick,
+}: {
+  item: PacificaWatchItem;
+  active: boolean;
+  score: number | null;
+  alertsCount: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full rounded-[18px] border px-4 py-3 text-left transition",
+        active
+          ? "border-[#65f3e0]/28 bg-[#65f3e0]/10"
+          : "border-[#f7f1df]/12 bg-[#101b18] hover:border-[#f7f1df]/20",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-[#f7f1df]">{item.label}</div>
+          <div className="mt-1 text-xs text-[#7f9189]">{shortAddress(item.accountId)}</div>
+        </div>
+        <div className="text-right">
+          <div className="font-mono text-xs text-[#f7f1df]">{score === null ? "--" : `${score}/100`}</div>
+          <div className="mt-1 text-xs text-[#7f9189]">
+            {alertsCount ? `${alertsCount} alerts` : "quiet"}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function PlanLane({
+  option,
+  onLoad,
+}: {
+  option: PacificaPlannerOption;
+  onLoad: (option: PacificaPlannerOption) => void;
+}) {
+  const tone = RISK_TONES[option.projected.riskSummary.status];
+
+  return (
+    <article className={cn("rounded-[26px] border bg-[#101b18] px-5 py-5", tone.border, tone.glow)}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+            Plan
+          </div>
+          <div className="font-display mt-2 text-[32px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+            {option.title}
+          </div>
+        </div>
+        <StatusPill tone={option.projected.riskSummary.status === "critical" ? "risk" : "soft"}>
+          {tone.label}
+        </StatusPill>
+      </div>
+      <p className="mt-4 text-sm leading-7 text-[#c7d0c6]">{option.summary}</p>
+      <div className="mt-5 rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-4">
+        <div className="text-sm font-semibold text-[#f7f1df]">
+          Projected score {option.projected.riskSummary.score}/100
+        </div>
+        <div className="mt-2 text-sm text-[#a8b6ac]">{option.rationale}</div>
+      </div>
+      <div className="mt-5 space-y-2">
+        {option.steps.map((step) => (
+          <div
+            key={step}
+            className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/45 px-4 py-3 text-sm leading-6 text-[#e9e0cf]"
+          >
+            {step}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onLoad(option)}
+        className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+      >
+        Load Into Scenario
+        <ArrowRight className="h-4 w-4" />
+      </button>
+    </article>
+  );
+}
+
+function WatchCard({
+  item,
+  snapshot,
+  isCurrent,
+  onLoad,
+  onCopy,
+  onDelete,
+  copied,
+}: {
+  item: PacificaWatchItem;
+  snapshot: WatchSnapshotState | null;
+  isCurrent: boolean;
+  onLoad: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+  copied: boolean;
+}) {
+  const payload = snapshot?.payload;
+  const evaluation = payload ? evaluateWatchItem(item, payload) : null;
+  const tone = evaluation ? RISK_TONES[evaluation.severity] : RISK_TONES.watch;
+
+  return (
+    <article className={cn("rounded-[24px] border bg-[#101b18] px-4 py-4", tone.border)}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-base font-semibold text-[#f7f1df]">{item.label}</div>
+          <div className="mt-1 text-sm text-[#7f9189]">{item.accountId}</div>
+        </div>
+        <StatusPill tone={evaluation?.severity === "critical" ? "risk" : "soft"}>
+          {payload ? `${payload.riskSummary.score}/100` : snapshot?.loading ? "syncing" : "idle"}
+        </StatusPill>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+            Thresholds
+          </div>
+          <div className="mt-2 text-sm leading-7 text-[#c7d0c6]">
+            Score {item.minScore}+ · Exposure {item.maxExposureMultiple}x · Buffer {item.minLiqBufferPct}% · Funding {item.maxFundingDragUsd} USD
+          </div>
+        </div>
+        <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+            State
+          </div>
+          {snapshot?.loading ? (
+            <div className="mt-2 inline-flex items-center gap-2 text-sm text-[#c7d0c6]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking
+            </div>
+          ) : snapshot?.error ? (
+            <div className="mt-2 text-sm text-[#ffd2c6]">{snapshot.error}</div>
+          ) : evaluation ? (
+            <div className="mt-2 text-sm leading-7 text-[#c7d0c6]">
+              {evaluation.alerts.length
+                ? evaluation.alerts[0]
+                : isCurrent
+                  ? "Current workspace account. Thresholds are currently quiet."
+                  : "No thresholds are breached right now."}
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-[#a8b6ac]">No recent watch data.</div>
+          )}
+        </div>
+      </div>
+
+      {evaluation?.alerts.length ? (
+        <div className="mt-4 space-y-2">
+          {evaluation.alerts.slice(0, 3).map((alert) => (
+            <div
+              key={alert}
+              className="rounded-[16px] border border-[#ff7a59]/22 bg-[#ff7a59]/8 px-4 py-3 text-sm text-[#ffe0d8]"
+            >
+              {alert}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onLoad}
+          className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#f7f1df] transition hover:bg-white/[0.08]"
         >
-          <span className="flex items-center gap-3">
-            <Icon className="h-4 w-4" />
-            {label}
-          </span>
-          <ArrowRight className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
-        </a>
-      ))}
-    </nav>
+          Load
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#f7f1df] transition hover:bg-white/[0.08]"
+        >
+          <Copy className="h-4 w-4" />
+          {copied ? "Copied" : "Share"}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#ffd2c6] transition hover:bg-white/[0.08]"
+        >
+          <Trash2 className="h-4 w-4" />
+          Remove
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -360,275 +639,61 @@ function buildOrderActivity(order: PacificaOrder) {
   };
 }
 
-function ActionList({
-  primaryPosition,
-  reduceToTargetUsd,
-  collateralToTargetUsd,
-  targetExposureMultiple,
-}: {
-  primaryPosition: PacificaPosition | null;
-  reduceToTargetUsd: number;
-  collateralToTargetUsd: number;
-  targetExposureMultiple: number;
-}) {
-  const symbol = primaryPosition?.symbol || "current position";
-  const actions = primaryPosition
-    ? [
-        `Do not add new leverage until ${symbol} risk improves.`,
-        reduceToTargetUsd > 0
-          ? `Reduce about ${formatUsd(reduceToTargetUsd)} of ${symbol} exposure to move below ${targetExposureMultiple}x equity.`
-          : `Keep exposure below ${targetExposureMultiple}x equity before opening new positions.`,
-        collateralToTargetUsd > 0
-          ? `Adding about ${formatUsd(collateralToTargetUsd)} collateral would also bring exposure back under ${targetExposureMultiple}x.`
-          : "Collateral is enough for the current target exposure band.",
-        "Keep a reduce-only exit active before making any fresh directional trade.",
-      ]
-    : [
-        "No live position is open for this account.",
-        "Use the market context below before taking a new position.",
-        "Keep first entries small until the account builds more equity history.",
-      ];
-
-  return (
-    <div className="grid gap-3">
-      {actions.map((action, index) => (
-        <div
-          key={action}
-          className="flex gap-3 rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
-        >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#65f3e0] text-sm font-semibold text-[#07111f]">
-            {index + 1}
-          </div>
-          <div className="text-sm leading-7 text-[#e9e0cf]">{action}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PositionRiskCard({
-  position,
-  equityUsd,
-  accountMarginUsd,
-  exposureMultiple,
-}: {
-  position: PacificaPosition | null;
-  equityUsd: number;
-  accountMarginUsd: number;
-  exposureMultiple: number;
-}) {
-  if (!position) {
-    return (
-      <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm leading-7 text-[#a8b6ac]">
-        No open Pacifica position was returned for this account. The health score will focus on
-        available equity and market context until a position exists.
-      </div>
-    );
-  }
-
-  const sideLabel = positionSideLabel(position.side);
-  const liquidationBuffer = position.liquidationDistancePct ?? 0;
-
-  return (
-    <article className="soft-scan rounded-[30px] border border-[#f7f1df]/12 bg-[#101b18] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-[#7f9189]">
-            Main risk driver
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h3 className="font-display text-[38px] font-semibold leading-none tracking-[-0.075em] text-[#f7f1df]">
-              {position.symbol} {sideLabel}
-            </h3>
-            <StatusPill tone="risk">
-              {liquidationBuffer ? `${liquidationBuffer.toFixed(1)}% liq buffer` : "No liq price"}
-            </StatusPill>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-sm text-[#7f9189]">Exposure / equity</div>
-          <div className="font-display mt-1 text-[38px] font-semibold tracking-[-0.07em] text-[#ffd2c6]">
-            {exposureMultiple.toFixed(1)}x
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <StatTile
-          label="Account equity"
-          value={formatUsd(equityUsd, 1)}
-          detail="Live account equity from Pacifica"
-          tone="good"
-        />
-        <StatTile
-          label="Position exposure"
-          value={formatCompactUsd(position.notionalUsd)}
-          detail={`${position.amount} ${position.symbol} at mark`}
-          tone={exposureMultiple >= 10 ? "danger" : "warn"}
-        />
-        <StatTile
-          label="Liquidation price"
-          value={position.liquidationPrice ? formatPrice(position.liquidationPrice) : "n/a"}
-          detail={`Mark now ${formatPrice(position.markPrice)}`}
-          tone={liquidationBuffer < 8 ? "danger" : "warn"}
-        />
-        <StatTile
-          label="Margin used"
-          value={formatUsd(accountMarginUsd, 1)}
-          detail="Total margin used by the account"
-          tone="warn"
-        />
-      </div>
-
-      <div className="mt-5 rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-sm font-semibold text-[#f7f1df]">Liquidation buffer</div>
-            <div className="mt-1 text-sm text-[#a8b6ac]">
-              Below 8% is treated as high risk for new leverage.
-            </div>
-          </div>
-          <div className="font-mono text-sm text-[#cbd6ce]">
-            {position.liquidationDistancePct === null
-              ? "n/a"
-              : `${position.liquidationDistancePct.toFixed(2)}%`}
-          </div>
-        </div>
-        <div className="mt-4">
-          <ProgressBar value={liquidationBuffer} dangerAt={12} />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function MarketRow({
-  market,
-  isFocused,
-  onFocus,
-}: {
-  market: PacificaRiskRoomResponse["marketSnapshot"][number];
-  isFocused: boolean;
-  onFocus: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onFocus}
-      className={cn(
-        "w-full rounded-[20px] border p-4 text-left transition",
-        isFocused
-          ? "border-[#65f3e0]/30 bg-[#65f3e0]/10"
-          : "border-[#f7f1df]/12 bg-[#101b18] hover:border-[#f7f1df]/22",
-      )}
-    >
-      <div className="grid gap-3 md:grid-cols-[1fr_repeat(4,minmax(0,0.8fr))] md:items-center">
-        <div>
-          <div className="text-lg font-semibold text-[#f7f1df]">{market.symbol}</div>
-          <div className="mt-1 text-sm text-[#7f9189]">{market.maxLeverage}x max leverage</div>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Mark
-          </div>
-          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">{formatPrice(market.mark)}</div>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            24h
-          </div>
-          <div className={cn("mt-1 text-sm font-semibold", market.change24hPct >= 0 ? "text-emerald-300" : "text-rose-300")}>
-            {formatPct(market.change24hPct)}
-          </div>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Funding
-          </div>
-          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">
-            {formatFundingRate(market.nextFundingRate)}
-          </div>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Volume
-          </div>
-          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">
-            {formatCompactUsd(market.volume24h)}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function FundingCard({
-  curve,
-  activeNotional,
-}: {
-  curve: PacificaFundingCurve;
-  activeNotional: number;
-}) {
-  const values = curve.points
-    .slice()
-    .reverse()
-    .map((point) => point.nextFundingRate * 10000);
-  const nextCost = Math.abs(activeNotional * curve.nextFundingRate);
-
-  return (
-    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
-            {curve.symbol}
-          </div>
-          <div className="font-display mt-2 text-[32px] font-semibold leading-none tracking-[-0.065em] text-[#f7f1df]">
-            {formatFundingRate(curve.nextFundingRate)}
-          </div>
-        </div>
-        <StatusPill tone="soft">{curve.regime}</StatusPill>
-      </div>
-      <div className="mt-4 rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-3 py-3">
-        <Sparkline values={values} stroke="#65f3e0" />
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Cost on current position
-          </div>
-          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
-            {activeNotional ? formatUsd(nextCost, 4) : "n/a"}
-          </div>
-        </div>
-        <div className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Cost per $1k
-          </div>
-          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
-            {formatUsd(curve.hourlyCarryFor1kUsd, 4)}
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export default function PacificaRiskRoomPage() {
   const searchParams = useSearchParams();
   const compactMode = searchParams.get("compact") === "1";
-  const [accountInput, setAccountInput] = useState(DEFAULT_LIVE_PACIFICA_ACCOUNT);
-  const [submittedAccount, setSubmittedAccount] = useState(DEFAULT_LIVE_PACIFICA_ACCOUNT);
+  const requestedAccount =
+    searchParams.get("account")?.trim() || DEFAULT_LIVE_PACIFICA_ACCOUNT;
+
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("overview");
+  const [accountInput, setAccountInput] = useState(requestedAccount);
+  const [submittedAccount, setSubmittedAccount] = useState(requestedAccount);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [payload, setPayload] = useState<PacificaRiskRoomResponse | null>(null);
   const [focusSymbol, setFocusSymbol] = useState("");
-  const focusSymbolRef = useRef("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [scenarioInput, setScenarioInput] = useState<PacificaScenarioInput>({
+    ...DEFAULT_SCENARIO_INPUT,
+    symbol: "BTC",
+    rotateToSymbol: "SOL",
+  });
+  const [watchItems, setWatchItems] = useState<PacificaWatchItem[]>([]);
+  const [watchStorageReady, setWatchStorageReady] = useState(false);
+  const [watchLabel, setWatchLabel] = useState("");
+  const [watchThresholds, setWatchThresholds] = useState({
+    minScore: 65,
+    maxExposureMultiple: 8,
+    minLiqBufferPct: 10,
+    maxFundingDragUsd: 3,
+  });
+  const [watchSnapshots, setWatchSnapshots] = useState<Record<string, WatchSnapshotState>>({});
+  const [copiedWatchId, setCopiedWatchId] = useState("");
 
   useEffect(() => {
-    focusSymbolRef.current = focusSymbol;
-  }, [focusSymbol]);
+    try {
+      const raw = window.localStorage.getItem(WATCH_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PacificaWatchItem[];
+        if (Array.isArray(parsed)) {
+          setWatchItems(parsed);
+        }
+      }
+    } catch {
+      // ignore invalid browser storage
+    } finally {
+      setWatchStorageReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!watchStorageReady) {
+      return;
+    }
+
+    window.localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watchItems));
+  }, [watchItems, watchStorageReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -653,7 +718,6 @@ export default function PacificaRiskRoomPage() {
           cache: "no-store",
         });
         const nextPayload = (await response.json()) as PacificaRiskRoomResponse;
-
         if (!response.ok || !nextPayload.success) {
           throw new Error("Failed to load Pacifica account health data");
         }
@@ -663,13 +727,20 @@ export default function PacificaRiskRoomPage() {
         }
 
         setPayload(nextPayload);
-        const activeFocusSymbol = focusSymbolRef.current;
-        if (
-          !activeFocusSymbol ||
-          !nextPayload.marketSnapshot.some((item) => item.symbol === activeFocusSymbol)
-        ) {
-          setFocusSymbol(nextPayload.account.positions[0]?.symbol || nextPayload.marketSnapshot[0]?.symbol || "");
-        }
+        setFocusSymbol((current) => {
+          if (
+            current &&
+            nextPayload.marketSnapshot.some((market) => market.symbol === current)
+          ) {
+            return current;
+          }
+
+          return (
+            nextPayload.account.positions[0]?.symbol ||
+            nextPayload.marketSnapshot[0]?.symbol ||
+            current
+          );
+        });
       } catch (loadError) {
         if (cancelled) {
           return;
@@ -697,28 +768,183 @@ export default function PacificaRiskRoomPage() {
     };
   }, [submittedAccount, refreshNonce]);
 
+  useEffect(() => {
+    if (!payload) {
+      return;
+    }
+
+    const defaultSymbol =
+      payload.account.positions[0]?.symbol || payload.marketSnapshot[0]?.symbol || "BTC";
+    const alternateSymbol =
+      payload.marketSnapshot.find((item) => item.symbol !== defaultSymbol)?.symbol ||
+      defaultSymbol;
+
+    setScenarioInput((current) => {
+      const nextSymbol = payload.marketSnapshot.some(
+        (item) => item.symbol === current.symbol,
+      )
+        ? current.symbol
+        : defaultSymbol;
+      const nextRotateTo = payload.marketSnapshot.some(
+        (item) => item.symbol === current.rotateToSymbol && item.symbol !== nextSymbol,
+      )
+        ? current.rotateToSymbol
+        : alternateSymbol;
+
+      if (
+        current.symbol === nextSymbol &&
+        current.rotateToSymbol === nextRotateTo &&
+        current.leverage ===
+          Math.min(
+            Math.max(current.leverage, 2),
+            (payload.marketSnapshot.find((item) => item.symbol === nextSymbol)?.maxLeverage || 5),
+          )
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        symbol: nextSymbol,
+        rotateToSymbol: nextRotateTo,
+        leverage: Math.min(
+          Math.max(current.leverage, 2),
+          payload.marketSnapshot.find((item) => item.symbol === nextSymbol)?.maxLeverage || 5,
+        ),
+      };
+    });
+
+    if (!watchLabel && submittedAccount.trim()) {
+      setWatchLabel(`Desk ${shortAddress(submittedAccount.trim())}`);
+    }
+  }, [payload, submittedAccount, watchLabel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (submittedAccount.trim()) {
+      url.searchParams.set("account", submittedAccount.trim());
+    } else {
+      url.searchParams.delete("account");
+    }
+    if (compactMode) {
+      url.searchParams.set("compact", "1");
+    } else {
+      url.searchParams.delete("compact");
+    }
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+  }, [submittedAccount, compactMode]);
+
+  useEffect(() => {
+    if (!watchItems.length) {
+      setWatchSnapshots({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadWatchSnapshots = async () => {
+      const currentAccountId =
+        payload?.sourceStatus.account === "live" ? payload.account.accountId : null;
+      const remoteItems = watchItems.filter((item) => item.accountId !== currentAccountId);
+
+      setWatchSnapshots((current) => {
+        const next = { ...current };
+        for (const item of remoteItems) {
+          next[item.id] = {
+            loading: true,
+            error: "",
+            payload: current[item.id]?.payload || null,
+          };
+        }
+
+        if (currentAccountId && payload) {
+          for (const item of watchItems.filter((watchItem) => watchItem.accountId === currentAccountId)) {
+            next[item.id] = {
+              loading: false,
+              error: "",
+              payload,
+            };
+          }
+        }
+
+        return next;
+      });
+
+      const results = await Promise.all(
+        remoteItems.map(async (item) => {
+          try {
+            const response = await fetch(
+              `/api/pacifica-risk-room?account=${encodeURIComponent(item.accountId)}&symbols=${encodeURIComponent(DEFAULT_SYMBOLS)}`,
+              { cache: "no-store" },
+            );
+            const nextPayload = (await response.json()) as PacificaRiskRoomResponse;
+            if (!response.ok || !nextPayload.success) {
+              throw new Error("Unable to refresh watch");
+            }
+
+            return {
+              id: item.id,
+              payload: nextPayload,
+              error: "",
+            };
+          } catch (watchError) {
+            return {
+              id: item.id,
+              payload: null,
+              error:
+                watchError instanceof Error ? watchError.message : "Unable to refresh watch",
+            };
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setWatchSnapshots((current) => {
+        const next = { ...current };
+        for (const item of results) {
+          next[item.id] = {
+            loading: false,
+            error: item.error,
+            payload: item.payload,
+          };
+        }
+        return next;
+      });
+    };
+
+    loadWatchSnapshots();
+    const interval = window.setInterval(loadWatchSnapshots, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [watchItems, payload]);
+
+  const primaryPosition = payload?.account.positions[0] || null;
   const riskSummary = payload?.riskSummary || null;
   const riskTone = riskSummary ? RISK_TONES[riskSummary.status] : RISK_TONES.watch;
   const RiskIcon = riskTone.icon;
-  const primaryPosition = payload?.account.positions[0] || null;
-  const grossExposure = payload
-    ? payload.account.positions.reduce((sum, item) => sum + item.notionalUsd, 0)
-    : 0;
-  const equityUsd = payload?.account.equityUsd || 0;
-  const exposureMultiple = equityUsd > 0 ? grossExposure / equityUsd : 0;
-  const targetExposureMultiple = riskSummary?.status === "critical" ? 8 : 10;
-  const reduceToTargetUsd = Math.max(0, grossExposure - equityUsd * targetExposureMultiple);
-  const collateralToTargetUsd =
-    targetExposureMultiple > 0
-      ? Math.max(0, grossExposure / targetExposureMultiple - equityUsd)
-      : 0;
-  const focusMarket =
-    payload?.marketSnapshot.find((item) => item.symbol === focusSymbol) || null;
-  const primaryFunding =
-    payload?.fundingCurves.find((item) => item.symbol === primaryPosition?.symbol) ||
-    payload?.fundingCurves.find((item) => item.symbol === focusSymbol) ||
+  const selectedMarket =
+    payload?.marketSnapshot.find((item) => item.symbol === focusSymbol) ||
+    payload?.marketSnapshot[0] ||
     null;
-  const portfolioSeries = payload?.account.portfolioHistory.map((item) => item.equityUsd) || [];
+  const selectedPosition =
+    payload?.account.positions.find((item) => item.symbol === scenarioInput.symbol) || null;
+  const currentMetrics = payload
+    ? computeHealthMetrics(payload.account, payload.fundingCurves)
+    : null;
+  const scenarioResult = payload
+    ? buildScenarioResult(payload, scenarioInput)
+    : null;
+  const plannerOptions = payload ? buildPlannerOptions(payload) : [];
   const activityItems = payload
     ? [
         ...payload.account.openOrders.slice(0, 3).map(buildOrderActivity),
@@ -727,101 +953,233 @@ export default function PacificaRiskRoomPage() {
         .sort((left, right) => (right.timestamp || 0) - (left.timestamp || 0))
         .slice(0, 6)
     : [];
+  const topFunding = payload?.fundingCurves.slice(0, 4) || [];
+  const currentWatchItem = watchItems.find(
+    (item) => item.accountId === submittedAccount.trim(),
+  );
+  const currentWatchEvaluation =
+    payload && currentWatchItem ? evaluateWatchItem(currentWatchItem, payload) : null;
+  const savedAlertCount = watchItems.reduce((count, item) => {
+    const currentSnapshot =
+      payload &&
+      payload.sourceStatus.account === "live" &&
+      payload.account.accountId === item.accountId
+        ? payload
+        : watchSnapshots[item.id]?.payload;
+    if (!currentSnapshot) {
+      return count;
+    }
+
+    return count + evaluateWatchItem(item, currentSnapshot).alerts.length;
+  }, 0);
+  const scenarioSizeCap = payload
+    ? Math.max(
+        250,
+        Math.round(selectedPosition?.notionalUsd || 0),
+        Math.round(payload.account.availableToSpendUsd * 1.5),
+      )
+    : 1000;
+  const selectedMarketMaxLeverage = selectedMarket?.maxLeverage || 10;
+
+  function handlePlannerLoad(option: PacificaPlannerOption) {
+    setScenarioInput(option.scenario);
+    if (option.scenario.symbol) {
+      setFocusSymbol(option.scenario.symbol);
+    }
+    setActiveWorkspace("scenario");
+  }
+
+  function handleSaveWatch() {
+    const accountId = submittedAccount.trim();
+    if (!accountId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setWatchItems((current) => {
+      const existing = current.find((item) => item.accountId === accountId);
+      const nextItem: PacificaWatchItem = {
+        id: existing?.id || crypto.randomUUID(),
+        label: watchLabel.trim() || `Desk ${shortAddress(accountId)}`,
+        accountId,
+        minScore: watchThresholds.minScore,
+        maxExposureMultiple: watchThresholds.maxExposureMultiple,
+        minLiqBufferPct: watchThresholds.minLiqBufferPct,
+        maxFundingDragUsd: watchThresholds.maxFundingDragUsd,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+
+      if (existing) {
+        return current.map((item) => (item.id === existing.id ? nextItem : item));
+      }
+
+      return [nextItem, ...current].slice(0, 8);
+    });
+  }
+
+  function handleLoadWatch(item: PacificaWatchItem) {
+    setAccountInput(item.accountId);
+    setSubmittedAccount(item.accountId);
+    setWatchLabel(item.label);
+    setWatchThresholds({
+      minScore: item.minScore,
+      maxExposureMultiple: item.maxExposureMultiple,
+      minLiqBufferPct: item.minLiqBufferPct,
+      maxFundingDragUsd: item.maxFundingDragUsd,
+    });
+    setActiveWorkspace("watch");
+  }
+
+  function handleDeleteWatch(id: string) {
+    setWatchItems((current) => current.filter((item) => item.id !== id));
+    setWatchSnapshots((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  async function handleCopyWatchLink(item: PacificaWatchItem) {
+    const link = `${window.location.origin}/app?account=${encodeURIComponent(item.accountId)}`;
+    await navigator.clipboard.writeText(link);
+    setCopiedWatchId(item.id);
+    window.setTimeout(() => {
+      setCopiedWatchId((current) => (current === item.id ? "" : current));
+    }, 1500);
+  }
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#07100f] text-[#f7f1df]">
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_8%,rgba(101,243,224,0.17),transparent_27%),radial-gradient(circle_at_92%_12%,rgba(216,255,106,0.12),transparent_22%),radial-gradient(circle_at_70%_80%,rgba(255,122,89,0.10),transparent_28%),linear-gradient(135deg,#07100f_0%,#0b1817_52%,#050807_100%)]" />
       <div className="fixed inset-0 -z-10 risk-grid opacity-50" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-20 h-px bg-gradient-to-r from-transparent via-[#65f3e0] to-transparent opacity-70" />
 
-      <div className="mx-auto max-w-[1540px] px-4 py-4 md:px-6">
-        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="order-2 rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95 p-4 shadow-[0_28px_120px_rgba(2,6,23,0.45)] xl:order-1 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)]">
-            <div className="rounded-[24px] border border-[#65f3e0]/25 bg-[#65f3e0]/10 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#65f3e0] text-[#07100f]">
-                  <Radar className="h-5 w-5" />
+      <div className="mx-auto max-w-[1680px] px-4 py-4 md:px-6">
+        <div
+          className={cn(
+            "grid gap-4",
+            compactMode ? "grid-cols-1" : "xl:grid-cols-[260px_minmax(0,1fr)_340px]",
+          )}
+        >
+          {!compactMode ? (
+            <aside className="order-2 rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95 p-4 shadow-[0_28px_120px_rgba(2,6,23,0.45)] xl:order-1 xl:h-[calc(100vh-2rem)] xl:sticky xl:top-4">
+              <div className="rounded-[24px] border border-[#65f3e0]/25 bg-[#65f3e0]/10 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#65f3e0] text-[#07100f]">
+                    <Radar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-display text-lg font-semibold tracking-[-0.05em] text-[#f7f1df]">
+                      Pacifica Account Health
+                    </div>
+                    <div className="text-sm text-[#bafdf4]/70">Decision workspace</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-display text-lg font-semibold tracking-[-0.045em] text-[#f7f1df]">Pacifica Account Health</div>
-                  <div className="text-sm text-[#bafdf4]/70">Risk before leverage</div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <StatusPill>
+                    Market {payload ? SOURCE_LABELS[payload.sourceStatus.market] : "..."}
+                  </StatusPill>
+                  <StatusPill tone="soft">
+                    Account {payload ? SOURCE_LABELS[payload.sourceStatus.account] : "..."}
+                  </StatusPill>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <StatusPill>Market {payload ? SOURCE_LABELS[payload.sourceStatus.market] : "..."}</StatusPill>
-                <StatusPill tone="soft">
-                  Account {payload ? SOURCE_LABELS[payload.sourceStatus.account] : "..."}
-                </StatusPill>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <NavRail />
-            </div>
-
-            <form
-              className="mt-5 space-y-3 rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setSubmittedAccount(accountInput.trim());
-              }}
-            >
-              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
-                Pacifica wallet
-              </div>
-              <input
-                value={accountInput}
-                onChange={(event) => setAccountInput(event.target.value)}
-                placeholder="Wallet or subaccount address"
-                className="w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f] px-4 py-3 text-sm text-[#f7f1df] outline-none transition placeholder:text-[#7f9189] focus:border-[#65f3e0]/60"
-              />
-              <button
-                type="submit"
-                className="w-full rounded-[16px] bg-[#65f3e0] px-4 py-3 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
-              >
-                Check health
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAccountInput("");
-                  setSubmittedAccount("");
+              <form
+                className="mt-4 rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setSubmittedAccount(accountInput.trim());
                 }}
-                className="w-full rounded-[16px] border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-[#e9e0cf] transition hover:bg-white/[0.08]"
               >
-                Use sample mode
-              </button>
-            </form>
-
-            <div className={cn("mt-5 rounded-[24px] border bg-[#101b18] p-4", riskTone.border, riskTone.glow)}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
-                    Health score
-                  </div>
-                  <div className={cn("mt-2 flex items-center gap-2 text-sm font-semibold", riskTone.text)}>
-                    <RiskIcon className="h-4 w-4" />
-                    {riskTone.label}
-                  </div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                  Pacifica wallet
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setRefreshNonce((value) => value + 1)}
-                  className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-3 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
-                >
-                  {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                  Refresh
-                </button>
-              </div>
-              <div className="font-display mt-4 text-[58px] font-semibold leading-none tracking-[-0.08em] text-[#f7f1df]">
-                {riskSummary ? riskSummary.score : "--"}
-              </div>
-              <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
-                out of 100
-              </div>
-            </div>
+                <input
+                  value={accountInput}
+                  onChange={(event) => setAccountInput(event.target.value)}
+                  placeholder="Wallet or subaccount address"
+                  className="mt-3 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f] px-4 py-3 text-sm text-[#f7f1df] outline-none transition placeholder:text-[#7f9189] focus:border-[#65f3e0]/60"
+                />
+                <div className="mt-3 grid gap-2">
+                  <button
+                    type="submit"
+                    className="w-full rounded-[16px] bg-[#65f3e0] px-4 py-3 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+                  >
+                    Review desk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountInput("");
+                      setSubmittedAccount("");
+                    }}
+                    className="w-full rounded-[16px] border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-[#e9e0cf] transition hover:bg-white/[0.08]"
+                  >
+                    Use sample mode
+                  </button>
+                </div>
+              </form>
 
-            {!compactMode ? (
+              <div className="mt-4">
+                <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                  Workspace
+                </div>
+                <div className="mt-3 space-y-2">
+                  {WORKSPACE_TABS.map(({ id, label, icon }) => (
+                    <WorkspaceTabButton
+                      key={id}
+                      label={label}
+                      icon={icon}
+                      active={activeWorkspace === id}
+                      onClick={() => setActiveWorkspace(id)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                    Saved watch
+                  </div>
+                  <StatusPill tone={savedAlertCount ? "risk" : "soft"}>
+                    {savedAlertCount ? `${savedAlertCount} alerts` : "quiet"}
+                  </StatusPill>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {watchItems.length ? (
+                    watchItems.slice(0, 4).map((item) => {
+                      const currentPayload =
+                        payload &&
+                        payload.sourceStatus.account === "live" &&
+                        payload.account.accountId === item.accountId
+                          ? payload
+                          : watchSnapshots[item.id]?.payload;
+                      const alertsCount = currentPayload
+                        ? evaluateWatchItem(item, currentPayload).alerts.length
+                        : 0;
+
+                      return (
+                        <WatchRow
+                          key={item.id}
+                          item={item}
+                          active={submittedAccount.trim() === item.accountId}
+                          score={currentPayload?.riskSummary.score || null}
+                          alertsCount={alertsCount}
+                          onClick={() => handleLoadWatch(item)}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4 text-sm leading-7 text-[#a8b6ac]">
+                      Save desks here after you define thresholds in the Watch workspace.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <Link
                 href="https://docs.pacifica.fi/api-documentation/api"
                 className="mt-5 flex items-center justify-between rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#cbd6ce] transition hover:bg-white/[0.05]"
@@ -832,55 +1190,77 @@ export default function PacificaRiskRoomPage() {
                 </span>
                 <ExternalLink className="h-4 w-4" />
               </Link>
-            ) : null}
-          </aside>
+            </aside>
+          ) : null}
 
-          <div className="order-1 space-y-4 xl:order-2">
+          <section className="order-1 min-w-0 space-y-4 xl:order-2">
             <section
-              id="health"
               className={cn(
-                "grain rounded-[38px] border bg-[#0c1715]/95 p-5 shadow-[0_34px_150px_rgba(0,0,0,0.42)] md:p-7",
+                "grain rounded-[32px] border bg-[#0c1715]/95 p-5 shadow-[0_32px_140px_rgba(0,0,0,0.34)]",
                 riskTone.border,
               )}
             >
-              <div className="grid gap-6 2xl:grid-cols-[1.2fr,0.8fr]">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
                   <div className="flex flex-wrap gap-2">
-                    <StatusPill>Analytics & risk dashboard</StatusPill>
+                    <StatusPill>Perps risk console</StatusPill>
                     <StatusPill tone="soft">
-                      {payload ? `Updated ${new Date(payload.generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "Loading"}
+                      {payload
+                        ? `Updated ${new Date(payload.generatedAt).toLocaleTimeString("en-US", {
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}`
+                        : "Loading"}
                     </StatusPill>
+                    {currentWatchEvaluation?.alerts.length ? (
+                      <StatusPill tone="risk">
+                        {currentWatchEvaluation.alerts.length} live alerts
+                      </StatusPill>
+                    ) : null}
                   </div>
-                  <h1 className="font-display mt-5 max-w-4xl text-[40px] font-extrabold leading-[0.96] tracking-[-0.06em] text-[#f7f1df] md:text-[72px] md:leading-[0.92] md:tracking-[-0.085em]">
-                    Know your Pacifica liquidation risk before adding leverage.
-                  </h1>
-                  <p className="mt-5 max-w-3xl text-base leading-8 text-[#cbd6ce]">
-                    A live account health monitor that turns Pacifica equity, position exposure,
-                    liquidation distance, funding, and recent activity into one clear safety decision.
+                  <div className="mt-4 flex flex-wrap items-center gap-4">
+                    <div>
+                      <div className="font-display text-[34px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+                        {payload?.account.mode === "live" ? "Live desk" : "Sample desk"}
+                      </div>
+                      <div className="mt-1 text-sm text-[#a8b6ac]">
+                        {payload
+                          ? `${shortAddress(payload.account.accountId)} · ${payload.account.positions.length} positions · ${payload.account.openOrders.length} open orders`
+                          : "Connecting to Pacifica"}
+                      </div>
+                    </div>
+                    <div className={cn("inline-flex items-center gap-2 text-base font-semibold", riskTone.text)}>
+                      <RiskIcon className="h-5 w-5" />
+                      {riskTone.label}
+                    </div>
+                  </div>
+                  <p className="mt-4 max-w-4xl text-sm leading-7 text-[#c7d0c6]">
+                    {riskSummary?.verdict ||
+                      "Loading Pacifica account posture, liquidation buffer, funding, and market context."}
                   </p>
                 </div>
 
-                <div className="soft-scan rounded-[30px] border border-[#f7f1df]/12 bg-[#101b18] p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
-                        Current decision
-                      </div>
-                      <div className={cn("mt-3 flex items-center gap-2 text-xl font-semibold", riskTone.text)}>
-                        <RiskIcon className="h-5 w-5" />
-                        {riskTone.label}
-                      </div>
-                    </div>
-                    <StatusPill tone={riskSummary?.status === "critical" ? "risk" : "soft"}>
-                      {riskSummary ? `${riskSummary.score}/100` : "--"}
-                    </StatusPill>
-                  </div>
-                  <div className="mt-5 rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 p-4 text-sm leading-7 text-[#e9e0cf]">
-                    {riskSummary?.verdict || "Loading current Pacifica account state..."}
-                  </div>
-                  <div className="mt-4 text-sm leading-6 text-[#7f9189]">
-                    Account: {payload ? shortAddress(payload.account.accountId) : shortAddress(DEFAULT_LIVE_PACIFICA_ACCOUNT)}
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRefreshNonce((value) => value + 1)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                  >
+                    {isRefreshing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="h-4 w-4" />
+                    )}
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveWatch}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+                  >
+                    <BookmarkPlus className="h-4 w-4" />
+                    Save Watch
+                  </button>
                 </div>
               </div>
 
@@ -889,219 +1269,880 @@ export default function PacificaRiskRoomPage() {
                   {error}
                 </div>
               ) : null}
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
+                <HeaderMetric
+                  label="Risk score"
+                  value={riskSummary ? `${riskSummary.score}` : "--"}
+                  detail="Out of 100"
+                  tone={riskSummary?.status === "critical" ? "danger" : "warn"}
+                />
+                <HeaderMetric
+                  label="Exposure / equity"
+                  value={currentMetrics ? `${currentMetrics.exposureMultiple.toFixed(1)}x` : "--"}
+                  detail="Gross exposure against account equity"
+                  tone={currentMetrics && currentMetrics.exposureMultiple >= 10 ? "danger" : "warn"}
+                />
+                <HeaderMetric
+                  label="Liq buffer"
+                  value={
+                    currentMetrics?.tightestLiqDistancePct !== null &&
+                    currentMetrics?.tightestLiqDistancePct !== undefined
+                      ? `${currentMetrics.tightestLiqDistancePct.toFixed(1)}%`
+                      : "n/a"
+                  }
+                  detail="Nearest liquidation distance"
+                  tone={
+                    currentMetrics?.tightestLiqDistancePct !== null &&
+                    currentMetrics?.tightestLiqDistancePct !== undefined &&
+                    currentMetrics.tightestLiqDistancePct < 8
+                      ? "danger"
+                      : "good"
+                  }
+                />
+                <HeaderMetric
+                  label="Funding next hour"
+                  value={currentMetrics ? formatUsd(currentMetrics.fundingDragUsd, 4) : "--"}
+                  detail="Carry drag on current book"
+                  tone="default"
+                />
+                <HeaderMetric
+                  label="Saved watches"
+                  value={`${watchItems.length}`}
+                  detail={
+                    savedAlertCount
+                      ? `${savedAlertCount} triggered thresholds`
+                      : "No triggered thresholds"
+                  }
+                  tone={savedAlertCount ? "danger" : "good"}
+                />
+              </div>
             </section>
 
             {isLoading && !payload ? (
-              <div className="flex min-h-[360px] items-center justify-center rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95">
+              <div className="flex min-h-[420px] items-center justify-center rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95">
                 <div className="flex items-center gap-3 text-[#cbd6ce]">
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  Loading Pacifica account health...
+                  Loading Pacifica workspace...
                 </div>
               </div>
             ) : null}
 
             {payload ? (
               <>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <StatTile
-                    label="Account equity"
-                    value={formatUsd(payload.account.equityUsd, 1)}
-                    detail={`Available ${formatUsd(payload.account.availableToSpendUsd, 1)}`}
-                    tone="good"
-                  />
-                  <StatTile
-                    label="Total exposure"
-                    value={formatCompactUsd(grossExposure)}
-                    detail={`${exposureMultiple.toFixed(1)}x account equity`}
-                    tone={exposureMultiple >= 10 ? "danger" : "warn"}
-                  />
-                  <StatTile
-                    label="Open positions"
-                    value={String(payload.account.positions.length)}
-                    detail={primaryPosition ? `${primaryPosition.symbol} is the main risk driver` : "No open position"}
-                  />
-                  <StatTile
-                    label="Funding on position"
-                    value={
-                      primaryPosition && primaryFunding
-                        ? formatUsd(Math.abs(primaryPosition.notionalUsd * primaryFunding.nextFundingRate), 4)
-                        : "n/a"
-                    }
-                    detail={primaryFunding ? `${primaryFunding.symbol} next funding ${formatFundingRate(primaryFunding.nextFundingRate)}` : "No funding curve"}
-                  />
+                <div className="flex flex-wrap gap-2">
+                  {WORKSPACE_TABS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setActiveWorkspace(id)}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                        activeWorkspace === id
+                          ? "border-[#65f3e0]/28 bg-[#65f3e0]/10 text-[#bafdf4]"
+                          : "border-[#f7f1df]/12 bg-[#101b18] text-[#a8b6ac] hover:text-[#f7f1df]",
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
-                <div className="grid gap-4 2xl:grid-cols-[1.1fr,0.9fr]">
-                  <Panel
-                    id="position"
-                    eyebrow="Position risk"
-                    title={primaryPosition ? `${primaryPosition.symbol} is driving the health score` : "No live position"}
-                    body="This section explains the account risk in plain language: exposure, liquidation buffer, and account margin."
-                  >
-                    <PositionRiskCard
-                      position={primaryPosition}
-                      equityUsd={payload.account.equityUsd}
-                      accountMarginUsd={payload.account.marginUsedUsd}
-                      exposureMultiple={exposureMultiple}
-                    />
-                  </Panel>
-
-                  <Panel
-                    id="action"
-                    eyebrow="Recommended action"
-                    title="What to do next"
-                    body="The action list is tied to the live account position, not unrelated markets."
-                    action={<StatusPill tone={riskSummary?.status === "critical" ? "risk" : "soft"}>{riskTone.label}</StatusPill>}
-                  >
-                    <ActionList
-                      primaryPosition={primaryPosition}
-                      reduceToTargetUsd={reduceToTargetUsd}
-                      collateralToTargetUsd={collateralToTargetUsd}
-                      targetExposureMultiple={targetExposureMultiple}
-                    />
-                  </Panel>
-                </div>
-
-                <div className="grid gap-4 2xl:grid-cols-[0.9fr,1.1fr]">
-                  <Panel
-                    id="funding"
-                    eyebrow="Funding cost"
-                    title={primaryFunding ? `${primaryFunding.symbol} carry on the live position` : "Funding context"}
-                    body="Funding is shown as a cost on the current account exposure, so it is clear whether carry matters."
-                  >
-                    {primaryFunding ? (
-                      <FundingCard
-                        curve={primaryFunding}
-                        activeNotional={primaryPosition?.notionalUsd || 0}
-                      />
-                    ) : (
-                      <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm text-[#a8b6ac]">
-                        No funding curve was returned for the active position.
-                      </div>
-                    )}
-                  </Panel>
-
-                  <Panel
-                    id="markets"
-                    eyebrow="Market context"
-                    title="Use the watchlist as context, not as the main decision"
-                    body="The account health score is driven by the live position. Market data stays available for comparison."
-                    action={<StatusPill tone="soft">{payload.watchlistSymbols.join(", ")}</StatusPill>}
-                  >
-                    <div className="grid gap-3">
-                      {payload.marketSnapshot.map((market) => (
-                        <MarketRow
-                          key={market.symbol}
-                          market={market}
-                          isFocused={focusSymbol === market.symbol}
-                          onFocus={() => setFocusSymbol(market.symbol)}
-                        />
-                      ))}
-                    </div>
-                  </Panel>
-                </div>
-
-                <div className="grid gap-4 2xl:grid-cols-[1.05fr,0.95fr]">
-                  <Panel
-                    eyebrow="Recent activity"
-                    title="Account fills and open orders"
-                    body="Only real account activity is shown here. Position-history records without close prices are intentionally hidden."
-                  >
-                    <div className="grid gap-3">
-                      {activityItems.length ? (
-                        activityItems.map((item, index) => (
-                          <article
-                            key={`${item.title}-${index}`}
-                            className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <div className="text-sm font-semibold text-[#f7f1df]">{item.title}</div>
-                                <div className="mt-2 text-sm text-[#a8b6ac]">{item.detail}</div>
-                              </div>
-                              <div className="shrink-0 text-xs text-[#7f9189]">
-                                {formatTime(item.timestamp)}
+                {activeWorkspace === "overview" ? (
+                  <div className="grid gap-4 xl:grid-cols-[1.15fr,0.85fr]">
+                    <ShellPane
+                      eyebrow="Position board"
+                      title={
+                        primaryPosition
+                          ? `${primaryPosition.symbol} drives the current desk`
+                          : "No live position is open"
+                      }
+                      className="min-w-0"
+                    >
+                      {primaryPosition ? (
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <div className="text-sm text-[#7f9189]">Main risk driver</div>
+                              <div className="font-display mt-2 text-[48px] font-semibold tracking-[-0.07em] text-[#f7f1df]">
+                                {primaryPosition.symbol} {positionSideLabel(primaryPosition.side)}
                               </div>
                             </div>
-                          </article>
+                            <div className="text-right">
+                              <div className="text-sm text-[#7f9189]">Exposure / equity</div>
+                              <div className="font-display mt-2 text-[48px] font-semibold tracking-[-0.07em] text-[#ffd2c6]">
+                                {currentMetrics ? `${currentMetrics.exposureMultiple.toFixed(1)}x` : "--"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+                            <HeaderMetric
+                              label="Account equity"
+                              value={formatUsd(payload.account.equityUsd, 1)}
+                              detail={`Available ${formatUsd(payload.account.availableToSpendUsd, 1)}`}
+                              tone="good"
+                            />
+                            <HeaderMetric
+                              label="Position exposure"
+                              value={formatCompactUsd(primaryPosition.notionalUsd)}
+                              detail={`${primaryPosition.amount} ${primaryPosition.symbol} at mark`}
+                              tone="danger"
+                            />
+                            <HeaderMetric
+                              label="Liquidation price"
+                              value={
+                                primaryPosition.liquidationPrice
+                                  ? formatPrice(primaryPosition.liquidationPrice)
+                                  : "n/a"
+                              }
+                              detail={`Mark now ${formatPrice(primaryPosition.markPrice)}`}
+                              tone="warn"
+                            />
+                            <HeaderMetric
+                              label="Margin used"
+                              value={formatUsd(payload.account.marginUsedUsd, 1)}
+                              detail="Total margin used by the desk"
+                              tone="warn"
+                            />
+                          </div>
+
+                          <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#07100f]/55 p-5">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <div className="text-sm font-semibold text-[#f7f1df]">
+                                  Liquidation buffer
+                                </div>
+                                <div className="mt-1 text-sm text-[#a8b6ac]">
+                                  Below 8% is treated as too tight for fresh leverage.
+                                </div>
+                              </div>
+                              <div className="font-mono text-sm text-[#cbd6ce]">
+                                {currentMetrics?.tightestLiqDistancePct !== null &&
+                                currentMetrics?.tightestLiqDistancePct !== undefined
+                                  ? `${currentMetrics.tightestLiqDistancePct.toFixed(2)}%`
+                                  : "n/a"}
+                              </div>
+                            </div>
+                            <div className="mt-4 h-3 rounded-full bg-white/10">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full",
+                                  (currentMetrics?.tightestLiqDistancePct || 0) < 8
+                                    ? "bg-[#ff7a59]"
+                                    : (currentMetrics?.tightestLiqDistancePct || 0) < 14
+                                      ? "bg-amber-300"
+                                      : "bg-emerald-300",
+                                )}
+                                style={{
+                                  width: `${Math.max(
+                                    4,
+                                    Math.min(
+                                      100,
+                                      (((currentMetrics?.tightestLiqDistancePct || 0) / 12) * 100),
+                                    ),
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
+                              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                                Operator playbook
+                              </div>
+                              <div className="mt-4 space-y-3">
+                                {riskSummary?.operatorPlaybook.map((step) => (
+                                  <div
+                                    key={step}
+                                    className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/45 px-4 py-3 text-sm leading-6 text-[#e9e0cf]"
+                                  >
+                                    {step}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
+                              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                                Health signals
+                              </div>
+                              <div className="mt-4 space-y-3">
+                                {riskSummary?.signals.map((signal) => (
+                                  <div
+                                    key={signal.title}
+                                    className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/45 px-4 py-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-sm font-semibold text-[#f7f1df]">
+                                        {signal.title}
+                                      </div>
+                                      <StatusPill tone={signal.tone === "critical" ? "risk" : "soft"}>
+                                        {signal.tone}
+                                      </StatusPill>
+                                    </div>
+                                    <div className="font-display mt-3 text-[30px] font-semibold tracking-[-0.05em] text-[#f7f1df]">
+                                      {signal.value}
+                                    </div>
+                                    <div className="mt-2 text-sm text-[#a8b6ac]">
+                                      {signal.detail}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm leading-7 text-[#a8b6ac]">
+                          No live position was returned for this account. Open the Scenario workspace
+                          to test a bounded first entry before trading.
+                        </div>
+                      )}
+                    </ShellPane>
+
+                    <ShellPane
+                      eyebrow="Execution brief"
+                      title="Action ladder"
+                      className="min-w-0"
+                    >
+                      <div className="space-y-3">
+                        {plannerOptions.length ? (
+                          plannerOptions.map((option) => (
+                            <div
+                              key={option.id}
+                              className="rounded-[22px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold text-[#f7f1df]">
+                                    {option.title}
+                                  </div>
+                                  <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">
+                                    {option.summary}
+                                  </div>
+                                </div>
+                                <StatusPill
+                                  tone={
+                                    option.projected.riskSummary.status === "critical"
+                                      ? "risk"
+                                      : "soft"
+                                  }
+                                >
+                                  {option.projected.riskSummary.score}/100
+                                </StatusPill>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handlePlannerLoad(option)}
+                                className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+                              >
+                                Explore Plan
+                                <ArrowRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm text-[#a8b6ac]">
+                            Waiting for live account data.
+                          </div>
+                        )}
+                      </div>
+                    </ShellPane>
+                  </div>
+                ) : null}
+
+                {activeWorkspace === "scenario" ? (
+                  <div className="grid gap-4 xl:grid-cols-[0.84fr,1.16fr]">
+                    <ShellPane eyebrow="Scenario lab" title="Test the trade before you place it">
+                      <div className="space-y-5">
+                        <div>
+                          <div className="text-sm text-[#a8b6ac]">
+                            Simulate adds, reductions, collateral top-ups, and rotations against the
+                            live Pacifica desk.
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ["Hold", "hold"],
+                            ["Add long", "add_long"],
+                            ["Add short", "add_short"],
+                            ["Reduce", "reduce"],
+                            ["Rotate", "rotate"],
+                          ].map(([label, value]) => (
+                            <ScenarioActionButton
+                              key={value}
+                              label={label}
+                              value={value as PacificaScenarioAction}
+                              active={scenarioInput.action === value}
+                              onClick={(nextAction) =>
+                                setScenarioInput((current) => ({
+                                  ...current,
+                                  action: nextAction,
+                                  sizeUsd: nextAction === "hold" ? 0 : Math.max(current.sizeUsd, 50),
+                                }))
+                              }
+                            />
+                          ))}
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Source market
+                            </div>
+                            <select
+                              value={scenarioInput.symbol}
+                              onChange={(event) => {
+                                const nextSymbol = event.target.value;
+                                setScenarioInput((current) => ({
+                                  ...current,
+                                  symbol: nextSymbol,
+                                  rotateToSymbol:
+                                    current.rotateToSymbol === nextSymbol
+                                      ? payload.marketSnapshot.find((item) => item.symbol !== nextSymbol)?.symbol || current.rotateToSymbol
+                                      : current.rotateToSymbol,
+                                  leverage: Math.min(
+                                    current.leverage,
+                                    payload.marketSnapshot.find((item) => item.symbol === nextSymbol)?.maxLeverage || current.leverage,
+                                  ),
+                                }));
+                                setFocusSymbol(nextSymbol);
+                              }}
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            >
+                              {payload.marketSnapshot.map((market) => (
+                                <option key={market.symbol} value={market.symbol}>
+                                  {market.symbol}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Target market
+                            </div>
+                            <select
+                              value={scenarioInput.rotateToSymbol}
+                              onChange={(event) =>
+                                setScenarioInput((current) => ({
+                                  ...current,
+                                  rotateToSymbol: event.target.value,
+                                }))
+                              }
+                              disabled={scenarioInput.action !== "rotate"}
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none disabled:opacity-45"
+                            >
+                              {payload.marketSnapshot
+                                .filter((market) => market.symbol !== scenarioInput.symbol)
+                                .map((market) => (
+                                  <option key={market.symbol} value={market.symbol}>
+                                    {market.symbol}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Size change
+                            </div>
+                            <div className="text-sm text-[#f7f1df]">
+                              {formatUsd(scenarioInput.sizeUsd, 0)}
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={scenarioSizeCap}
+                            step={25}
+                            value={Math.min(scenarioInput.sizeUsd, scenarioSizeCap)}
+                            onChange={(event) =>
+                              setScenarioInput((current) => ({
+                                ...current,
+                                sizeUsd: Number(event.target.value),
+                              }))
+                            }
+                            className="mt-3 h-2 w-full accent-[#65f3e0]"
+                            disabled={scenarioInput.action === "hold"}
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            step={25}
+                            value={scenarioInput.sizeUsd}
+                            onChange={(event) =>
+                              setScenarioInput((current) => ({
+                                ...current,
+                                sizeUsd: Number(event.target.value) || 0,
+                              }))
+                            }
+                            className="mt-3 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            disabled={scenarioInput.action === "hold"}
+                          />
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                                Assumed leverage
+                              </div>
+                              <div className="text-sm text-[#f7f1df]">
+                                {scenarioInput.leverage}x
+                              </div>
+                            </div>
+                            <input
+                              type="range"
+                              min={2}
+                              max={selectedMarketMaxLeverage}
+                              step={1}
+                              value={Math.min(scenarioInput.leverage, selectedMarketMaxLeverage)}
+                              onChange={(event) =>
+                                setScenarioInput((current) => ({
+                                  ...current,
+                                  leverage: Number(event.target.value),
+                                }))
+                              }
+                              className="mt-3 h-2 w-full accent-[#d8ff6a]"
+                            />
+                          </div>
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Collateral delta
+                            </div>
+                            <input
+                              type="number"
+                              step={5}
+                              value={scenarioInput.collateralDeltaUsd}
+                              onChange={(event) =>
+                                setScenarioInput((current) => ({
+                                  ...current,
+                                  collateralDeltaUsd: Number(event.target.value) || 0,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </ShellPane>
+
+                    <ShellPane
+                      eyebrow="Projected state"
+                      title="Outcome book"
+                      action={
+                        scenarioResult ? (
+                        <StatusPill
+                            tone={
+                              scenarioResult.riskSummary.status === "critical" ? "risk" : "soft"
+                            }
+                          >
+                            {RISK_TONES[scenarioResult.riskSummary.status].label}
+                          </StatusPill>
+                        ) : null
+                      }
+                    >
+                      {scenarioResult && currentMetrics ? (
+                        <div className="space-y-4">
+                          <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-5 py-5">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div>
+                                <div className="text-sm text-[#7f9189]">Projected verdict</div>
+                                <div className="font-display mt-2 text-[40px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+                                  {scenarioResult.riskSummary.score}/100
+                                </div>
+                              </div>
+                              <div
+                                className={cn(
+                                  "text-sm font-semibold",
+                                  RISK_TONES[scenarioResult.riskSummary.status].text,
+                                )}
+                              >
+                                {formatSigned(scenarioResult.scoreDelta)}
+                              </div>
+                            </div>
+                            <div className="mt-4 text-sm leading-7 text-[#e9e0cf]">
+                              {scenarioResult.riskSummary.verdict}
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <ComparisonCell
+                              label="Risk score"
+                              current={`${payload.riskSummary.score}`}
+                              projected={`${scenarioResult.riskSummary.score}`}
+                              delta={formatSigned(scenarioResult.scoreDelta)}
+                              tone={scenarioResult.scoreDelta > 0 ? "good" : "danger"}
+                            />
+                            <ComparisonCell
+                              label="Exposure / equity"
+                              current={`${currentMetrics.exposureMultiple.toFixed(1)}x`}
+                              projected={`${scenarioResult.metrics.exposureMultiple.toFixed(1)}x`}
+                              delta={`${(scenarioResult.metrics.exposureMultiple - currentMetrics.exposureMultiple).toFixed(1)}x`}
+                              tone={scenarioResult.metrics.exposureMultiple < currentMetrics.exposureMultiple ? "good" : "warn"}
+                            />
+                            <ComparisonCell
+                              label="Liq buffer"
+                              current={
+                                currentMetrics.tightestLiqDistancePct !== null
+                                  ? `${currentMetrics.tightestLiqDistancePct.toFixed(1)}%`
+                                  : "n/a"
+                              }
+                              projected={
+                                scenarioResult.metrics.tightestLiqDistancePct !== null
+                                  ? `${scenarioResult.metrics.tightestLiqDistancePct.toFixed(1)}%`
+                                  : "n/a"
+                              }
+                              delta={
+                                currentMetrics.tightestLiqDistancePct !== null &&
+                                scenarioResult.metrics.tightestLiqDistancePct !== null
+                                  ? `${(scenarioResult.metrics.tightestLiqDistancePct - currentMetrics.tightestLiqDistancePct).toFixed(1)}%`
+                                  : "n/a"
+                              }
+                              tone="good"
+                            />
+                            <ComparisonCell
+                              label="Funding drag"
+                              current={formatUsd(currentMetrics.fundingDragUsd, 4)}
+                              projected={formatUsd(scenarioResult.metrics.fundingDragUsd, 4)}
+                              delta={formatUsd(scenarioResult.metrics.fundingDragUsd - currentMetrics.fundingDragUsd, 4)}
+                              tone={scenarioResult.metrics.fundingDragUsd <= currentMetrics.fundingDragUsd ? "good" : "warn"}
+                            />
+                          </div>
+
+                          <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
+                            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Assumptions
+                            </div>
+                            <div className="mt-4 space-y-2">
+                              {scenarioResult.assumptions.map((assumption) => (
+                                <div
+                                  key={assumption}
+                                  className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/45 px-4 py-3 text-sm leading-6 text-[#c7d0c6]"
+                                >
+                                  {assumption}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm text-[#a8b6ac]">
+                          Waiting for live desk data.
+                        </div>
+                      )}
+                    </ShellPane>
+                  </div>
+                ) : null}
+
+                {activeWorkspace === "planner" ? (
+                  <ShellPane eyebrow="Action planner" title="Three decision paths for the current desk">
+                    <div className="grid gap-4 xl:grid-cols-3">
+                      {plannerOptions.length ? (
+                        plannerOptions.map((option) => (
+                          <PlanLane key={option.id} option={option} onLoad={handlePlannerLoad} />
                         ))
                       ) : (
-                        <div className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm text-[#a8b6ac]">
-                          No recent fills or open orders were returned.
+                        <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm text-[#a8b6ac]">
+                          No planner options are available without live account data.
                         </div>
                       )}
                     </div>
-                  </Panel>
+                  </ShellPane>
+                ) : null}
 
-                  <Panel
-                    eyebrow="Health signals"
-                    title="Why the score changed"
-                    body="These are the exact inputs behind the account health score."
-                  >
-                    <div className="grid gap-3">
-                      {riskSummary?.signals.map((signal) => (
-                        <article
-                          key={signal.title}
-                          className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-[#f7f1df]">{signal.title}</div>
-                            <StatusPill tone={signal.tone === "critical" ? "risk" : "soft"}>
-                              {signal.tone}
-                            </StatusPill>
-                          </div>
-                          <div className="mt-3 text-[28px] font-semibold leading-none tracking-[-0.05em] text-[#f7f1df]">
-                            {signal.value}
-                          </div>
-                          <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">{signal.detail}</div>
-                        </article>
-                      ))}
-                    </div>
-                  </Panel>
-                </div>
-
-                <Panel
-                  id="data"
-                  eyebrow="Live data proof"
-                  title="Pacifica data used in this health check"
-                  body="The product uses Pacifica REST data for account state, positions, funding, market prices, and recent trades."
-                >
-                  <div className="grid gap-4 xl:grid-cols-[0.9fr,1.1fr]">
-                    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
-                      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
-                        Portfolio replay
-                      </div>
-                      <div className="mt-4 rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-3 py-4">
-                        <Sparkline values={portfolioSeries} stroke="#34d399" />
-                      </div>
-                    </article>
-
-                    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
-                      <div className="flex flex-wrap gap-2">
-                        {payload.dataSources.map((source) => (
-                          <StatusPill key={source} tone="soft">
-                            {source.replace("Pacifica REST ", "")}
-                          </StatusPill>
-                        ))}
-                      </div>
-                      {payload.notes.length ? (
-                        <div className="mt-4 space-y-2">
-                          {payload.notes.map((note) => (
-                            <div
-                              key={note}
-                              className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3 text-sm leading-6 text-[#a8b6ac]"
-                            >
-                              {note}
-                            </div>
-                          ))}
+                {activeWorkspace === "watch" ? (
+                  <div className="grid gap-4 xl:grid-cols-[0.78fr,1.22fr]">
+                    <ShellPane eyebrow="Watch builder" title="Save thresholds for repeat monitoring">
+                      <div className="space-y-4">
+                        <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-4 text-sm leading-7 text-[#c7d0c6]">
+                          Turn this into a real monitoring product by saving desk-specific risk floors
+                          and loading them back into the workspace.
                         </div>
-                      ) : null}
-                    </article>
+
+                        <label className="block">
+                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                            Watch label
+                          </div>
+                          <input
+                            value={watchLabel}
+                            onChange={(event) => setWatchLabel(event.target.value)}
+                            placeholder="Desk name"
+                            className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                          />
+                        </label>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Min score
+                            </div>
+                            <input
+                              type="number"
+                              min={20}
+                              max={95}
+                              value={watchThresholds.minScore}
+                              onChange={(event) =>
+                                setWatchThresholds((current) => ({
+                                  ...current,
+                                  minScore: Number(event.target.value) || 0,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Max exposure / equity
+                            </div>
+                            <input
+                              type="number"
+                              min={1}
+                              max={25}
+                              step={0.5}
+                              value={watchThresholds.maxExposureMultiple}
+                              onChange={(event) =>
+                                setWatchThresholds((current) => ({
+                                  ...current,
+                                  maxExposureMultiple: Number(event.target.value) || 0,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Min liq buffer
+                            </div>
+                            <input
+                              type="number"
+                              min={2}
+                              max={30}
+                              step={0.5}
+                              value={watchThresholds.minLiqBufferPct}
+                              onChange={(event) =>
+                                setWatchThresholds((current) => ({
+                                  ...current,
+                                  minLiqBufferPct: Number(event.target.value) || 0,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                              Max funding drag
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              max={50}
+                              step={0.5}
+                              value={watchThresholds.maxFundingDragUsd}
+                              onChange={(event) =>
+                                setWatchThresholds((current) => ({
+                                  ...current,
+                                  maxFundingDragUsd: Number(event.target.value) || 0,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        {currentWatchEvaluation ? (
+                          <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold text-[#f7f1df]">
+                                Current desk against saved thresholds
+                              </div>
+                              <StatusPill
+                                tone={
+                                  currentWatchEvaluation.severity === "critical"
+                                    ? "risk"
+                                    : "soft"
+                                }
+                              >
+                                {currentWatchEvaluation.alerts.length
+                                  ? `${currentWatchEvaluation.alerts.length} alerts`
+                                  : "quiet"}
+                              </StatusPill>
+                            </div>
+                            <div className="mt-3 text-sm text-[#a8b6ac]">
+                              {currentWatchEvaluation.alerts.length
+                                ? currentWatchEvaluation.alerts[0]
+                                : "The current desk is inside the saved watch thresholds."}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={handleSaveWatch}
+                          className="inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+                        >
+                          <BookmarkPlus className="h-4 w-4" />
+                          Save / Update Watch
+                        </button>
+                      </div>
+                    </ShellPane>
+
+                    <ShellPane eyebrow="Saved desks" title="Triggered thresholds and quick reload">
+                      <div className="space-y-3">
+                        {watchItems.length ? (
+                          watchItems.map((item) => {
+                            const snapshot =
+                              payload &&
+                              payload.sourceStatus.account === "live" &&
+                              payload.account.accountId === item.accountId
+                                ? { loading: false, error: "", payload }
+                                : watchSnapshots[item.id] || null;
+
+                            return (
+                              <WatchCard
+                                key={item.id}
+                                item={item}
+                                snapshot={snapshot}
+                                isCurrent={submittedAccount.trim() === item.accountId}
+                                onLoad={() => handleLoadWatch(item)}
+                                onCopy={() => handleCopyWatchLink(item)}
+                                onDelete={() => handleDeleteWatch(item.id)}
+                                copied={copiedWatchId === item.id}
+                              />
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm leading-7 text-[#a8b6ac]">
+                            No saved watches yet. Define thresholds on the left, save the desk, and
+                            this pane becomes a real alert console.
+                          </div>
+                        )}
+                      </div>
+                    </ShellPane>
                   </div>
-                </Panel>
+                ) : null}
               </>
             ) : null}
-          </div>
+          </section>
+
+          {!compactMode ? (
+            <aside className="order-3 space-y-4">
+              <ShellPane eyebrow="Market inspector" title={selectedMarket ? `${selectedMarket.symbol} focus` : "Market focus"}>
+                {selectedMarket ? (
+                  <div className="space-y-4">
+                    <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="font-display text-[42px] font-semibold tracking-[-0.07em] text-[#f7f1df]">
+                            {selectedMarket.symbol}
+                          </div>
+                          <div className="mt-1 text-sm text-[#a8b6ac]">
+                            {selectedMarket.maxLeverage}x max · Funding {formatFundingRate(selectedMarket.nextFundingRate)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-[#7f9189]">Mark</div>
+                          <div className="font-display mt-1 text-[32px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+                            {formatPrice(selectedMarket.mark)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3">
+                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                            Crowd
+                          </div>
+                          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
+                            {selectedMarket.crowdedScore}
+                          </div>
+                        </div>
+                        <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3">
+                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                            24h volume
+                          </div>
+                          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
+                            {formatCompactUsd(selectedMarket.volume24h)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {payload?.marketSnapshot.map((market) => (
+                        <MarketListRow
+                          key={market.symbol}
+                          market={market}
+                          active={market.symbol === selectedMarket.symbol}
+                          onClick={() => setFocusSymbol(market.symbol)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm text-[#a8b6ac]">
+                    No market data yet.
+                  </div>
+                )}
+              </ShellPane>
+
+              <ShellPane eyebrow="Carry board" title="Funding radar">
+                <div className="space-y-3">
+                  {topFunding.map((curve: PacificaFundingCurve) => (
+                    <div
+                      key={curve.symbol}
+                      className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-[#f7f1df]">{curve.symbol}</div>
+                          <div className="mt-1 text-xs text-[#7f9189]">{curve.regime}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold text-[#f7f1df]">
+                            {formatFundingRate(curve.nextFundingRate)}
+                          </div>
+                          <div className="mt-1 text-xs text-[#7f9189]">
+                            {formatUsd(curve.hourlyCarryFor1kUsd, 4)} / $1k
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ShellPane>
+
+              <ShellPane eyebrow="Activity tape" title="Recent orders and fills">
+                <div className="space-y-3">
+                  {activityItems.length ? (
+                    activityItems.map((item, index) => (
+                      <div
+                        key={`${item.title}-${index}`}
+                        className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-semibold text-[#f7f1df]">{item.title}</div>
+                            <div className="mt-2 text-sm text-[#a8b6ac]">{item.detail}</div>
+                          </div>
+                          <div className="text-xs text-[#7f9189]">{formatTime(item.timestamp)}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-5 text-sm text-[#a8b6ac]">
+                      No recent fills or orders were returned.
+                    </div>
+                  )}
+                </div>
+              </ShellPane>
+            </aside>
+          ) : null}
         </div>
       </div>
     </main>
