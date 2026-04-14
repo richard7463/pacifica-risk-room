@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -114,69 +114,72 @@ interface ConnectedWalletState {
   label: string;
 }
 
+type GuideTargetId =
+  | "connect-wallet"
+  | "wallet-form"
+  | "desk-metrics"
+  | "scenario-panel"
+  | "watch-panel";
+
 const GUIDE_STEPS = [
   {
     id: "connect",
-    label: "Connect",
     eyebrow: "Step 1",
-    title: "Link a real wallet or paste any Pacifica account",
+    targetId: "connect-wallet" as GuideTargetId,
+    title: "Connect a wallet first",
     summary:
-      "Use the top-right wallet button to sync a browser wallet into the desk instantly. The account field stays editable, so you can still inspect any Pacifica account manually.",
-    bullets: [
-      "Phantom, Backpack, Solflare, and MetaMask are supported in-browser.",
-      "Once connected, the account field is auto-filled and the desk refreshes immediately.",
-      "You can disconnect at any time without losing saved watches or scenario setups.",
-    ],
-    metricLabel: "Wallet sync",
-    metricValue: "Live context",
+      "Use this button to sync a browser wallet into the desk instantly. It is the fastest way to turn the workspace from sample mode into a real account view.",
+    detail:
+      "Phantom, Backpack, Solflare, and MetaMask are supported. After connect, the address is written into the account field and the desk refreshes automatically.",
+    actionLabel: "Connect Wallet",
+    workspace: "overview" as WorkspaceId,
+  },
+  {
+    id: "wallet",
+    eyebrow: "Step 2",
+    targetId: "wallet-form" as GuideTargetId,
+    title: "Paste or switch the Pacifica account here",
+    summary:
+      "This is your account switcher. Even if you connect a wallet, you can still overwrite the input to inspect any Pacifica wallet or subaccount manually.",
+    detail:
+      "Use Review desk to load that account, or Use sample mode when you just want to demo the product flow without a live account.",
+    actionLabel: "Review Desk",
     workspace: "overview" as WorkspaceId,
   },
   {
     id: "desk",
-    label: "Desk",
-    eyebrow: "Step 2",
-    title: "Read the desk first before touching leverage",
+    eyebrow: "Step 3",
+    targetId: "desk-metrics" as GuideTargetId,
+    title: "Read these three numbers before making a trade",
     summary:
-      "The Desk workspace is the health check. It tells you whether the current book is safe enough to add, too tight to hold, or already demanding a reduction.",
-    bullets: [
-      "Read the risk score, exposure multiple, and liquidation buffer together.",
-      "If liq buffer is tight or exposure dominates equity, treat the desk as stressed.",
-      "Use the operator playbook to understand why the verdict is high risk or healthy.",
-    ],
-    metricLabel: "Main signal",
-    metricValue: "Risk score + liq buffer",
+      "Risk score, exposure versus equity, and liquidation buffer are the core health check. If these are stretched, the desk is already stressed.",
+    detail:
+      "A better desk has a higher score, lower exposure multiple, and a wider liquidation buffer. Read these before touching leverage.",
+    actionLabel: "Open Scenario",
     workspace: "overview" as WorkspaceId,
   },
   {
     id: "scenario",
-    label: "Scenario",
-    eyebrow: "Step 3",
-    title: "Test the next trade before you actually place it",
+    eyebrow: "Step 4",
+    targetId: "scenario-panel" as GuideTargetId,
+    title: "Scenario is where the product becomes useful",
     summary:
-      "Scenario Lab converts the app from dashboard to decision tool. Add, reduce, rotate, or top up collateral and compare the projected desk against the live one.",
-    bullets: [
-      "Start with Reduce or collateral top-up if the desk is already stressed.",
-      "Watch how risk score, exposure multiple, and funding drag change together.",
-      "A projected score going down means the next trade makes the desk worse, not better.",
-    ],
-    metricLabel: "Decision mode",
-    metricValue: "What-if simulation",
+      "This is the pre-trade simulator. Add, reduce, rotate, or top up collateral and compare the projected desk against the live one before you place anything.",
+    detail:
+      "If the projected score drops or the liquidation buffer gets tighter, that simulated move is making the account worse.",
+    actionLabel: "Open Watch",
     workspace: "scenario" as WorkspaceId,
   },
   {
     id: "watch",
-    label: "Watch",
-    eyebrow: "Step 4",
-    title: "Save thresholds so the app becomes a monitoring product",
+    eyebrow: "Step 5",
+    targetId: "watch-panel" as GuideTargetId,
+    title: "Watch turns it into a monitoring app",
     summary:
-      "Watch Mode is for repeat use. Save desks with a minimum score, max exposure, and liquidation floor so you can reload and review them in seconds.",
-    bullets: [
-      "Create one watch per trading wallet or strategy sleeve.",
-      "Triggered thresholds surface which desk needs attention first.",
-      "Saved watches also give you a shareable review link for demos and ops handoff.",
-    ],
-    metricLabel: "Retention loop",
-    metricValue: "Saved alerts",
+      "Save threshold presets here so you can reload important desks instantly and know which wallet needs attention first.",
+    detail:
+      "Set a minimum score, maximum exposure multiple, and liquidation floor. That gives you a reusable risk profile instead of a one-off query.",
+    actionLabel: "Finish Tour",
     workspace: "watch" as WorkspaceId,
   },
 ] as const;
@@ -308,6 +311,10 @@ function positionSideLabel(side: string) {
 
 function formatSigned(value: number, suffix = "") {
   return `${value >= 0 ? "+" : ""}${value.toFixed(0)}${suffix}`;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function resolveWalletProvider(): WalletProviderDescriptor | null {
@@ -840,6 +847,19 @@ export default function PacificaRiskRoomPage() {
   const [copiedWatchId, setCopiedWatchId] = useState("");
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideStepIndex, setGuideStepIndex] = useState(0);
+  const [guideShouldAutoOpen, setGuideShouldAutoOpen] = useState(false);
+  const [guideTargetRect, setGuideTargetRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+    radius: number;
+  } | null>(null);
+  const [guideCardPosition, setGuideCardPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const [walletStatus, setWalletStatus] = useState<"idle" | "connecting" | "connected">(
     "idle",
   );
@@ -847,9 +867,16 @@ export default function PacificaRiskRoomPage() {
   const [connectedWallet, setConnectedWallet] = useState<ConnectedWalletState | null>(null);
   const walletProviderRef = useRef<WalletProviderDescriptor | null>(null);
   const walletCleanupRef = useRef<(() => void) | null>(null);
+  const connectWalletButtonRef = useRef<HTMLButtonElement | null>(null);
+  const walletFormRef = useRef<HTMLFormElement | null>(null);
+  const deskMetricsRef = useRef<HTMLDivElement | null>(null);
+  const scenarioPanelRef = useRef<HTMLDivElement | null>(null);
+  const watchPanelRef = useRef<HTMLDivElement | null>(null);
 
   const closeGuide = (persist = true) => {
     setGuideOpen(false);
+    setGuideTargetRect(null);
+    setGuideCardPosition(null);
     if (persist) {
       try {
         window.localStorage.setItem(GUIDE_STORAGE_KEY, "1");
@@ -864,7 +891,10 @@ export default function PacificaRiskRoomPage() {
     setGuideOpen(true);
   };
 
-  const syncConnectedWallet = (
+  const syncConnectedWallet: (
+    address: string,
+    descriptor: Pick<WalletProviderDescriptor, "family" | "label">,
+  ) => void = useCallback((
     address: string,
     descriptor: Pick<WalletProviderDescriptor, "family" | "label">,
   ) => {
@@ -878,14 +908,17 @@ export default function PacificaRiskRoomPage() {
     setAccountInput(address);
     setSubmittedAccount(address);
     setWatchLabel((current) => current || `Desk ${shortAddress(address)}`);
-  };
+  }, []);
 
-  const clearWalletListeners = () => {
+  const clearWalletListeners: () => void = useCallback(() => {
     walletCleanupRef.current?.();
     walletCleanupRef.current = null;
-  };
+  }, []);
 
-  const clearWalletConnection = (keepDeskInput = true, disconnectProvider = true) => {
+  const clearWalletConnection: (
+    keepDeskInput?: boolean,
+    disconnectProvider?: boolean,
+  ) => void = useCallback((keepDeskInput = true, disconnectProvider = true) => {
     clearWalletListeners();
     const descriptor = walletProviderRef.current;
     walletProviderRef.current = null;
@@ -903,9 +936,10 @@ export default function PacificaRiskRoomPage() {
         // ignore wallet disconnect errors
       });
     }
-  };
+  }, [clearWalletListeners]);
 
-  const attachWalletListeners = (descriptor: WalletProviderDescriptor) => {
+  const attachWalletListeners: (descriptor: WalletProviderDescriptor) => void =
+    useCallback((descriptor: WalletProviderDescriptor) => {
     clearWalletListeners();
 
     if (descriptor.family === "solana") {
@@ -951,11 +985,11 @@ export default function PacificaRiskRoomPage() {
 
     descriptor.provider.on?.("accountsChanged", handleAccountsChanged);
     descriptor.provider.on?.("disconnect", handleDisconnect);
-    walletCleanupRef.current = () => {
-      descriptor.provider.removeListener?.("accountsChanged", handleAccountsChanged);
-      descriptor.provider.removeListener?.("disconnect", handleDisconnect);
-    };
-  };
+      walletCleanupRef.current = () => {
+        descriptor.provider.removeListener?.("accountsChanged", handleAccountsChanged);
+        descriptor.provider.removeListener?.("disconnect", handleDisconnect);
+      };
+    }, [clearWalletConnection, clearWalletListeners, syncConnectedWallet]);
 
   async function handleConnectWallet() {
     setWalletError("");
@@ -1028,18 +1062,27 @@ export default function PacificaRiskRoomPage() {
     } finally {
       setWatchStorageReady(true);
     }
-  }, []);
+  }, [attachWalletListeners, clearWalletListeners, syncConnectedWallet]);
 
   useEffect(() => {
     try {
       const hasSeenGuide = window.localStorage.getItem(GUIDE_STORAGE_KEY);
       if (!hasSeenGuide) {
-        setGuideOpen(true);
+        setGuideShouldAutoOpen(true);
       }
     } catch {
-      setGuideOpen(true);
+      setGuideShouldAutoOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!guideShouldAutoOpen || !payload || compactMode) {
+      return;
+    }
+
+    openGuide(0);
+    setGuideShouldAutoOpen(false);
+  }, [guideShouldAutoOpen, payload, compactMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1080,7 +1123,7 @@ export default function PacificaRiskRoomPage() {
       cancelled = true;
       clearWalletListeners();
     };
-  }, []);
+  }, [attachWalletListeners, clearWalletListeners, syncConnectedWallet]);
 
   useEffect(() => {
     if (!watchStorageReady) {
@@ -1376,7 +1419,122 @@ export default function PacificaRiskRoomPage() {
     : 1000;
   const selectedMarketMaxLeverage = selectedMarket?.maxLeverage || 10;
   const activeGuideStep = GUIDE_STEPS[guideStepIndex] || GUIDE_STEPS[0];
-  const guideProgress = ((guideStepIndex + 1) / GUIDE_STEPS.length) * 100;
+
+  const resolveGuideTargetElement = useCallback(() => {
+    switch (activeGuideStep.targetId) {
+      case "connect-wallet":
+        return connectWalletButtonRef.current;
+      case "wallet-form":
+        return walletFormRef.current;
+      case "desk-metrics":
+        return deskMetricsRef.current;
+      case "scenario-panel":
+        return scenarioPanelRef.current;
+      case "watch-panel":
+        return watchPanelRef.current;
+      default:
+        return null;
+    }
+  }, [activeGuideStep.targetId]);
+
+  useEffect(() => {
+    if (!guideOpen) {
+      return;
+    }
+
+    if (activeWorkspace !== activeGuideStep.workspace) {
+      setActiveWorkspace(activeGuideStep.workspace);
+    }
+  }, [guideOpen, activeGuideStep.workspace, activeWorkspace]);
+
+  useEffect(() => {
+    if (!guideOpen) {
+      return;
+    }
+
+    const target = resolveGuideTargetElement();
+    if (!target) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+    }, 80);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [guideOpen, guideStepIndex, activeWorkspace, resolveGuideTargetElement]);
+
+  useEffect(() => {
+    if (!guideOpen) {
+      return;
+    }
+
+    const syncGuidePosition = () => {
+      const target = resolveGuideTargetElement();
+      if (!target) {
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      const padding = activeGuideStep.targetId === "connect-wallet" ? 10 : 12;
+      const highlight = {
+        top: Math.max(8, rect.top - padding),
+        left: Math.max(8, rect.left - padding),
+        width: Math.min(window.innerWidth - 16, rect.width + padding * 2),
+        height: Math.min(window.innerHeight - 16, rect.height + padding * 2),
+        radius:
+          activeGuideStep.targetId === "connect-wallet"
+            ? 999
+            : activeGuideStep.targetId === "desk-metrics"
+              ? 30
+              : 26,
+      };
+
+      const cardWidth = Math.min(360, window.innerWidth - 24);
+      const belowTop = rect.bottom + 18;
+      const aboveTop = rect.top - 250;
+      const top =
+        belowTop + 240 < window.innerHeight
+          ? belowTop
+          : Math.max(12, aboveTop);
+      const left = clamp(
+        rect.left + Math.min(24, rect.width * 0.2),
+        12,
+        window.innerWidth - cardWidth - 12,
+      );
+
+      setGuideTargetRect(highlight);
+      setGuideCardPosition({
+        top,
+        left,
+        width: cardWidth,
+      });
+    };
+
+    const raf = window.requestAnimationFrame(syncGuidePosition);
+    window.addEventListener("resize", syncGuidePosition);
+    window.addEventListener("scroll", syncGuidePosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", syncGuidePosition);
+      window.removeEventListener("scroll", syncGuidePosition, true);
+    };
+  }, [
+    guideOpen,
+    guideStepIndex,
+    activeWorkspace,
+    payload,
+    currentMetrics?.exposureMultiple,
+    activeGuideStep.targetId,
+    resolveGuideTargetElement,
+  ]);
 
   function handlePlannerLoad(option: PacificaPlannerOption) {
     setScenarioInput(option.scenario);
@@ -1426,11 +1584,6 @@ export default function PacificaRiskRoomPage() {
       maxFundingDragUsd: item.maxFundingDragUsd,
     });
     setActiveWorkspace("watch");
-  }
-
-  function handleGuideWorkspace(workspace: WorkspaceId) {
-    setActiveWorkspace(workspace);
-    closeGuide();
   }
 
   function handleDeleteWatch(id: string) {
@@ -1489,6 +1642,7 @@ export default function PacificaRiskRoomPage() {
               </div>
 
               <form
+                ref={walletFormRef}
                 className="mt-4 rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1696,6 +1850,7 @@ export default function PacificaRiskRoomPage() {
                     Save Watch
                   </button>
                   <button
+                    ref={connectWalletButtonRef}
                     type="button"
                     onClick={connectedWallet ? handleDisconnectWallet : handleConnectWallet}
                     className={cn(
@@ -1727,7 +1882,10 @@ export default function PacificaRiskRoomPage() {
                 </div>
               ) : null}
 
-              <div className="mt-5 grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
+              <div
+                ref={deskMetricsRef}
+                className="mt-5 grid gap-3 md:grid-cols-2 2xl:grid-cols-5"
+              >
                 <HeaderMetric
                   label="Risk score"
                   value={riskSummary ? `${riskSummary.score}` : "--"}
@@ -2011,7 +2169,10 @@ export default function PacificaRiskRoomPage() {
                 ) : null}
 
                 {activeWorkspace === "scenario" ? (
-                  <div className="grid gap-4 xl:grid-cols-[0.84fr,1.16fr]">
+                  <div
+                    ref={scenarioPanelRef}
+                    className="grid gap-4 xl:grid-cols-[0.84fr,1.16fr]"
+                  >
                     <ShellPane eyebrow="Scenario lab" title="Test the trade before you place it">
                       <div className="space-y-5">
                         <div>
@@ -2315,7 +2476,10 @@ export default function PacificaRiskRoomPage() {
                 ) : null}
 
                 {activeWorkspace === "watch" ? (
-                  <div className="grid gap-4 xl:grid-cols-[0.78fr,1.22fr]">
+                  <div
+                    ref={watchPanelRef}
+                    className="grid gap-4 xl:grid-cols-[0.78fr,1.22fr]"
+                  >
                     <ShellPane eyebrow="Watch builder" title="Save thresholds for repeat monitoring">
                       <div className="space-y-4">
                         <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-4 text-sm leading-7 text-[#c7d0c6]">
@@ -2603,274 +2767,134 @@ export default function PacificaRiskRoomPage() {
         </div>
       </div>
 
-      {guideOpen ? (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#020807]/82 px-4 py-6 backdrop-blur-md md:px-6 md:py-8">
-          <div className="mx-auto flex min-h-full max-w-[1220px] items-center justify-center">
-            <div className="grain rise-in grid w-full overflow-hidden rounded-[36px] border border-[#f7f1df]/14 bg-[#091210]/95 shadow-[0_40px_180px_rgba(0,0,0,0.55)] lg:grid-cols-[320px_minmax(0,1fr)]">
-              <aside className="border-b border-[#f7f1df]/10 bg-[#08110f]/98 p-5 lg:border-b-0 lg:border-r lg:p-6">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
-                      Quickstart
-                    </div>
-                    <div className="font-display mt-2 text-[34px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
-                      Pacifica Guide
-                    </div>
-                  </div>
+      {guideOpen && guideTargetRect && guideCardPosition ? (
+        <>
+          <div
+            className="pointer-events-none fixed z-40 border border-[#65f3e0]/40 bg-transparent"
+            style={{
+              top: guideTargetRect.top,
+              left: guideTargetRect.left,
+              width: guideTargetRect.width,
+              height: guideTargetRect.height,
+              borderRadius: guideTargetRect.radius,
+              boxShadow:
+                "0 0 0 9999px rgba(2, 8, 7, 0.74), 0 0 0 1px rgba(101,243,224,0.3), 0 0 36px rgba(101,243,224,0.2)",
+            }}
+          />
+          <div
+            className="fixed z-50 rounded-[28px] border border-[#f7f1df]/12 bg-[#0a1412]/96 p-5 shadow-[0_28px_120px_rgba(0,0,0,0.52)] backdrop-blur-xl"
+            style={{
+              top: guideCardPosition.top,
+              left: guideCardPosition.left,
+              width: guideCardPosition.width,
+            }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
+                  Product Tour
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <StatusPill>{activeGuideStep.eyebrow}</StatusPill>
+                  <StatusPill tone="soft">
+                    {guideStepIndex + 1} / {GUIDE_STEPS.length}
+                  </StatusPill>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeGuide()}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#f7f1df]/12 bg-white/[0.04] text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                aria-label="Close guide"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <div className="font-display text-[34px] font-semibold leading-[0.96] tracking-[-0.06em] text-[#f7f1df]">
+                {activeGuideStep.title}
+              </div>
+              <div className="mt-3 text-sm leading-7 text-[#d7e4da]">
+                {activeGuideStep.summary}
+              </div>
+              <div className="mt-4 rounded-[20px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4 text-sm leading-7 text-[#a8b6ac]">
+                {activeGuideStep.detail}
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {GUIDE_STEPS.map((step, index) => (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => setGuideStepIndex(index)}
+                  className={cn(
+                    "rounded-full border px-3 py-2 text-xs font-medium transition",
+                    index === guideStepIndex
+                      ? "border-[#65f3e0]/28 bg-[#65f3e0]/10 text-[#bafdf4]"
+                      : "border-[#f7f1df]/10 bg-white/[0.03] text-[#a8b6ac] hover:text-[#f7f1df]",
+                  )}
+                >
+                  {step.eyebrow}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGuideStepIndex((current) => Math.max(0, current - 1))}
+                  disabled={guideStepIndex === 0}
+                  className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => closeGuide()}
+                  className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                >
+                  Skip
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {activeGuideStep.id === "connect" && !connectedWallet ? (
                   <button
                     type="button"
-                    onClick={() => closeGuide()}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#f7f1df]/12 bg-white/[0.04] text-[#cbd6ce] transition hover:bg-white/[0.08]"
-                    aria-label="Close guide"
+                    onClick={() => {
+                      void handleConnectWallet();
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
                   >
-                    <X className="h-4 w-4" />
+                    {activeGuideStep.actionLabel}
+                    <Wallet className="h-4 w-4" />
                   </button>
-                </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (guideStepIndex === GUIDE_STEPS.length - 1) {
+                      closeGuide();
+                      return;
+                    }
 
-                <div className="mt-5 rounded-[24px] border border-[#65f3e0]/18 bg-[linear-gradient(145deg,rgba(101,243,224,0.18),rgba(216,255,106,0.08),rgba(9,18,16,0.88))] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#65f3e0] text-[#07100f]">
-                      <Sparkles className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-[#f7f1df]">
-                        30-second flow
-                      </div>
-                      <div className="mt-1 text-sm text-[#d6e5db]">
-                        Connect a wallet, read the desk, stress test the next trade, then save a watch.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 h-2 rounded-full bg-black/20">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#65f3e0] via-[#d8ff6a] to-[#ff7a59]"
-                      style={{ width: `${guideProgress}%` }}
-                    />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-[#d6e5db]">
-                    <span>{activeGuideStep.eyebrow}</span>
-                    <span>{guideStepIndex + 1} / {GUIDE_STEPS.length}</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-2">
-                  {GUIDE_STEPS.map((step, index) => (
-                    <button
-                      key={step.id}
-                      type="button"
-                      onClick={() => setGuideStepIndex(index)}
-                      className={cn(
-                        "w-full rounded-[22px] border px-4 py-4 text-left transition",
-                        index === guideStepIndex
-                          ? "border-[#65f3e0]/24 bg-[#65f3e0]/10"
-                          : "border-[#f7f1df]/10 bg-white/[0.03] hover:bg-white/[0.06]",
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-                            {step.eyebrow}
-                          </div>
-                          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
-                            {step.title}
-                          </div>
-                        </div>
-                        <StatusPill tone={index === guideStepIndex ? "default" : "soft"}>
-                          {step.label}
-                        </StatusPill>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-5 rounded-[24px] border border-[#f7f1df]/10 bg-white/[0.03] p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-                    Current state
-                  </div>
-                  <div className="mt-3 text-sm leading-6 text-[#c7d0c6]">
-                    {connectedWallet
-                      ? `${connectedWallet.label} is linked and synced to ${shortAddress(connectedWallet.address)}.`
-                      : "No wallet is linked yet. You can still paste any Pacifica account into the desk."}
-                  </div>
-                </div>
-              </aside>
-
-              <section className="relative overflow-hidden p-5 md:p-7">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top_left,rgba(101,243,224,0.22),transparent_40%),radial-gradient(circle_at_top_right,rgba(216,255,106,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
-                <div className="relative">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="max-w-3xl">
-                      <StatusPill>{activeGuideStep.metricLabel}</StatusPill>
-                      <div className="font-display mt-4 text-[42px] font-semibold leading-[0.94] tracking-[-0.07em] text-[#f7f1df] md:text-[54px]">
-                        {activeGuideStep.title}
-                      </div>
-                      <div className="mt-4 max-w-2xl text-base leading-8 text-[#d6e5db]">
-                        {activeGuideStep.summary}
-                      </div>
-                    </div>
-                    <div className="min-w-[220px] rounded-[26px] border border-[#f7f1df]/12 bg-[#07100f]/72 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.25)]">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
-                        Why it matters
-                      </div>
-                      <div className="font-display mt-3 text-[34px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
-                        {activeGuideStep.metricValue}
-                      </div>
-                      <div className="mt-3 text-sm leading-6 text-[#a8b6ac]">
-                        The workspace is designed to move you from raw account data to a concrete next action.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 grid gap-4 xl:grid-cols-[1.1fr,0.9fr]">
-                    <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[#0e1917]/92 p-5 shadow-[0_24px_100px_rgba(0,0,0,0.25)]">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#65f3e0]/14 text-[#bafdf4]">
-                          {activeGuideStep.id === "connect" ? (
-                            <Wallet className="h-5 w-5" />
-                          ) : activeGuideStep.id === "scenario" ? (
-                            <FlaskConical className="h-5 w-5" />
-                          ) : activeGuideStep.id === "watch" ? (
-                            <BellRing className="h-5 w-5" />
-                          ) : (
-                            <ShieldCheck className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-[#f7f1df]">
-                            How to use it
-                          </div>
-                          <div className="mt-1 text-sm text-[#a8b6ac]">
-                            Follow this flow and the app becomes much easier to read.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 space-y-3">
-                        {activeGuideStep.bullets.map((bullet) => (
-                          <div
-                            key={bullet}
-                            className="flex items-start gap-3 rounded-[22px] border border-[#f7f1df]/10 bg-[#07100f]/65 px-4 py-4"
-                          >
-                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#d8ff6a]/18 text-[#d8ff6a]">
-                              <ChevronRight className="h-4 w-4" />
-                            </div>
-                            <div className="text-sm leading-7 text-[#d6e5db]">{bullet}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4">
-                      <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[linear-gradient(160deg,rgba(101,243,224,0.08),rgba(9,18,16,0.9),rgba(255,122,89,0.08))] p-5">
-                        <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
-                          Learn by doing
-                        </div>
-                        <div className="mt-3 text-sm leading-7 text-[#d6e5db]">
-                          {activeGuideStep.id === "connect"
-                            ? "Link a wallet now, then the desk will refresh against the connected address without copying and pasting anything."
-                            : activeGuideStep.id === "desk"
-                              ? "Open the Desk and read the top three numbers first: risk score, exposure versus equity, and liquidation buffer."
-                              : activeGuideStep.id === "scenario"
-                                ? "Open Scenario and test a Reduce or collateral top-up before trying any fresh directional add."
-                                : "Open Watch and save the current desk as an alert profile you can reload later."}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (activeGuideStep.id === "connect") {
-                              if (connectedWallet) {
-                                handleGuideWorkspace("overview");
-                                return;
-                              }
-
-                              void handleConnectWallet();
-                              return;
-                            }
-
-                            handleGuideWorkspace(activeGuideStep.workspace);
-                          }}
-                          className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
-                        >
-                          {activeGuideStep.id === "connect"
-                            ? connectedWallet
-                              ? "Open Desk"
-                              : "Connect Wallet"
-                            : `Open ${WORKSPACE_TABS.find((tab) => tab.id === activeGuideStep.workspace)?.label || "Workspace"}`}
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[#07100f]/72 p-5">
-                        <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
-                          Fast interpretation
-                        </div>
-                        <div className="mt-4 grid gap-3">
-                          <div className="rounded-[20px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4">
-                            <div className="text-sm font-semibold text-[#f7f1df]">
-                              Good
-                            </div>
-                            <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">
-                              Risk score rises, exposure drops, and liquidation buffer widens after your simulated action.
-                            </div>
-                          </div>
-                          <div className="rounded-[20px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4">
-                            <div className="text-sm font-semibold text-[#f7f1df]">
-                              Bad
-                            </div>
-                            <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">
-                              Risk score falls, exposure stretches, or the liq buffer compresses. That means the next trade is making the desk weaker.
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setGuideStepIndex((current) => Math.max(0, current - 1))
-                        }
-                        disabled={guideStepIndex === 0}
-                        className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => closeGuide()}
-                        className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
-                      >
-                        Skip for now
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (guideStepIndex === GUIDE_STEPS.length - 1) {
-                          closeGuide();
-                          return;
-                        }
-
-                        setGuideStepIndex((current) =>
-                          Math.min(GUIDE_STEPS.length - 1, current + 1),
-                        );
-                      }}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#d8ff6a] px-5 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#ebff9b]"
-                    >
-                      {guideStepIndex === GUIDE_STEPS.length - 1 ? "Finish Guide" : "Next Step"}
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </section>
+                    setGuideStepIndex((current) =>
+                      Math.min(GUIDE_STEPS.length - 1, current + 1),
+                    );
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#d8ff6a] px-5 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#ebff9b]"
+                >
+                  {guideStepIndex === GUIDE_STEPS.length - 1 ? "Finish Tour" : "Next Step"}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       ) : null}
     </main>
   );
