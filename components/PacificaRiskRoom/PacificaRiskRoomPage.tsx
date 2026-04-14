@@ -74,12 +74,12 @@ const RISK_TONES: Record<
     text: "text-amber-200",
   },
   critical: {
-    badge: "border-rose-400/30 bg-rose-400/10 text-rose-200",
-    border: "border-rose-400/35",
+    badge: "border-rose-400/30 bg-[#ff7a59]/10 text-[#ffd2c6]",
+    border: "border-[#ff7a59]/36",
     glow: "shadow-[0_30px_120px_rgba(244,63,94,0.18)]",
     icon: ShieldX,
     label: "High risk",
-    text: "text-rose-200",
+    text: "text-[#ffd2c6]",
   },
 };
 
@@ -169,10 +169,10 @@ function StatusPill({
       className={cn(
         "inline-flex items-center rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em]",
         tone === "soft"
-          ? "border-white/10 bg-white/[0.04] text-slate-300"
+          ? "border-[#f7f1df]/12 bg-white/[0.04] text-[#cbd6ce]"
           : tone === "risk"
-            ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
-            : "border-cyan-300/20 bg-cyan-300/10 text-cyan-200",
+            ? "border-rose-400/30 bg-[#ff7a59]/10 text-[#ffd2c6]"
+            : "border-[#65f3e0]/25 bg-[#65f3e0]/10 text-[#bafdf4]",
       )}
     >
       {children}
@@ -201,20 +201,20 @@ function Panel({
     <section
       id={id}
       className={cn(
-        "rounded-[30px] border border-white/10 bg-[#0b111f]/95 p-5 shadow-[0_24px_90px_rgba(2,6,23,0.4)] md:p-6",
+        "grain rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95 p-5 shadow-[0_28px_100px_rgba(0,0,0,0.34)] md:p-6",
         className,
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-slate-500">
+          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-[#7f9189]">
             {eyebrow}
           </div>
-          <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.045em] text-white">
+          <h2 className="font-display mt-2 text-[28px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
             {title}
           </h2>
           {body ? (
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-400">{body}</p>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-[#a8b6ac]">{body}</p>
           ) : null}
         </div>
         {action}
@@ -238,23 +238,23 @@ function StatTile({
   return (
     <article
       className={cn(
-        "rounded-[24px] border bg-[#101827] p-4",
+        "rounded-[24px] border bg-[#101b18] p-4",
         tone === "good"
           ? "border-emerald-400/20"
           : tone === "warn"
             ? "border-amber-400/20"
             : tone === "danger"
-              ? "border-rose-400/25"
-              : "border-white/10",
+              ? "border-[#ff7a59]/28"
+              : "border-[#f7f1df]/12",
       )}
     >
-      <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+      <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
         {label}
       </div>
-      <div className="mt-3 text-[30px] font-semibold leading-none tracking-[-0.055em] text-white">
+      <div className="font-display mt-3 text-[34px] font-semibold leading-none tracking-[-0.065em] text-[#f7f1df]">
         {value}
       </div>
-      {detail ? <div className="mt-2 text-sm leading-6 text-slate-400">{detail}</div> : null}
+      {detail ? <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">{detail}</div> : null}
     </article>
   );
 }
@@ -287,7 +287,7 @@ function ProgressBar({
 function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
   if (values.length < 2) {
     return (
-      <div className="flex h-20 items-center justify-center rounded-[18px] border border-white/10 bg-black/20 font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+      <div className="flex h-20 items-center justify-center rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
         No history
       </div>
     );
@@ -331,7 +331,7 @@ function NavRail() {
         <a
           key={label}
           href={href}
-          className="group flex items-center justify-between rounded-[18px] border border-transparent px-3 py-3 text-sm text-slate-400 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-white"
+          className="group flex items-center justify-between rounded-[18px] border border-transparent px-3 py-3 text-sm text-[#a8b6ac] transition hover:border-[#f7f1df]/12 hover:bg-white/[0.04] hover:text-[#f7f1df]"
         >
           <span className="flex items-center gap-3">
             <Icon className="h-4 w-4" />
@@ -394,12 +394,12 @@ function ActionList({
       {actions.map((action, index) => (
         <div
           key={action}
-          className="flex gap-3 rounded-[20px] border border-white/10 bg-[#101827] p-4"
+          className="flex gap-3 rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-300 text-sm font-semibold text-[#07111f]">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#65f3e0] text-sm font-semibold text-[#07111f]">
             {index + 1}
           </div>
-          <div className="text-sm leading-7 text-slate-200">{action}</div>
+          <div className="text-sm leading-7 text-[#e9e0cf]">{action}</div>
         </div>
       ))}
     </div>
@@ -419,7 +419,7 @@ function PositionRiskCard({
 }) {
   if (!position) {
     return (
-      <div className="rounded-[24px] border border-white/10 bg-[#101827] p-5 text-sm leading-7 text-slate-400">
+      <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm leading-7 text-[#a8b6ac]">
         No open Pacifica position was returned for this account. The health score will focus on
         available equity and market context until a position exists.
       </div>
@@ -430,14 +430,14 @@ function PositionRiskCard({
   const liquidationBuffer = position.liquidationDistancePct ?? 0;
 
   return (
-    <article className="rounded-[28px] border border-white/10 bg-[#101827] p-5">
+    <article className="soft-scan rounded-[30px] border border-[#f7f1df]/12 bg-[#101b18] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-slate-500">
+          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-[#7f9189]">
             Main risk driver
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h3 className="text-[34px] font-semibold leading-none tracking-[-0.06em] text-white">
+            <h3 className="font-display text-[38px] font-semibold leading-none tracking-[-0.075em] text-[#f7f1df]">
               {position.symbol} {sideLabel}
             </h3>
             <StatusPill tone="risk">
@@ -446,8 +446,8 @@ function PositionRiskCard({
           </div>
         </div>
         <div className="text-right">
-          <div className="text-sm text-slate-500">Exposure / equity</div>
-          <div className="mt-1 text-[32px] font-semibold tracking-[-0.05em] text-rose-100">
+          <div className="text-sm text-[#7f9189]">Exposure / equity</div>
+          <div className="font-display mt-1 text-[38px] font-semibold tracking-[-0.07em] text-[#ffd2c6]">
             {exposureMultiple.toFixed(1)}x
           </div>
         </div>
@@ -480,15 +480,15 @@ function PositionRiskCard({
         />
       </div>
 
-      <div className="mt-5 rounded-[22px] border border-white/10 bg-black/20 p-4">
+      <div className="mt-5 rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-sm font-semibold text-white">Liquidation buffer</div>
-            <div className="mt-1 text-sm text-slate-400">
+            <div className="text-sm font-semibold text-[#f7f1df]">Liquidation buffer</div>
+            <div className="mt-1 text-sm text-[#a8b6ac]">
               Below 8% is treated as high risk for new leverage.
             </div>
           </div>
-          <div className="font-mono text-sm text-slate-300">
+          <div className="font-mono text-sm text-[#cbd6ce]">
             {position.liquidationDistancePct === null
               ? "n/a"
               : `${position.liquidationDistancePct.toFixed(2)}%`}
@@ -518,23 +518,23 @@ function MarketRow({
       className={cn(
         "w-full rounded-[20px] border p-4 text-left transition",
         isFocused
-          ? "border-cyan-300/30 bg-cyan-300/10"
-          : "border-white/10 bg-[#101827] hover:border-white/20",
+          ? "border-[#65f3e0]/30 bg-[#65f3e0]/10"
+          : "border-[#f7f1df]/12 bg-[#101b18] hover:border-[#f7f1df]/22",
       )}
     >
       <div className="grid gap-3 md:grid-cols-[1fr_repeat(4,minmax(0,0.8fr))] md:items-center">
         <div>
-          <div className="text-lg font-semibold text-white">{market.symbol}</div>
-          <div className="mt-1 text-sm text-slate-500">{market.maxLeverage}x max leverage</div>
+          <div className="text-lg font-semibold text-[#f7f1df]">{market.symbol}</div>
+          <div className="mt-1 text-sm text-[#7f9189]">{market.maxLeverage}x max leverage</div>
         </div>
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             Mark
           </div>
-          <div className="mt-1 text-sm font-semibold text-white">{formatPrice(market.mark)}</div>
+          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">{formatPrice(market.mark)}</div>
         </div>
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             24h
           </div>
           <div className={cn("mt-1 text-sm font-semibold", market.change24hPct >= 0 ? "text-emerald-300" : "text-rose-300")}>
@@ -542,18 +542,18 @@ function MarketRow({
           </div>
         </div>
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             Funding
           </div>
-          <div className="mt-1 text-sm font-semibold text-white">
+          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">
             {formatFundingRate(market.nextFundingRate)}
           </div>
         </div>
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             Volume
           </div>
-          <div className="mt-1 text-sm font-semibold text-white">
+          <div className="mt-1 text-sm font-semibold text-[#f7f1df]">
             {formatCompactUsd(market.volume24h)}
           </div>
         </div>
@@ -576,35 +576,35 @@ function FundingCard({
   const nextCost = Math.abs(activeNotional * curve.nextFundingRate);
 
   return (
-    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
+    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
             {curve.symbol}
           </div>
-          <div className="mt-2 text-[28px] font-semibold leading-none tracking-[-0.05em] text-white">
+          <div className="font-display mt-2 text-[32px] font-semibold leading-none tracking-[-0.065em] text-[#f7f1df]">
             {formatFundingRate(curve.nextFundingRate)}
           </div>
         </div>
         <StatusPill tone="soft">{curve.regime}</StatusPill>
       </div>
-      <div className="mt-4 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
-        <Sparkline values={values} stroke="#22d3ee" />
+      <div className="mt-4 rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-3 py-3">
+        <Sparkline values={values} stroke="#65f3e0" />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+        <div className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             Cost on current position
           </div>
-          <div className="mt-2 text-sm font-semibold text-white">
+          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
             {activeNotional ? formatUsd(nextCost, 4) : "n/a"}
           </div>
         </div>
-        <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+        <div className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
             Cost per $1k
           </div>
-          <div className="mt-2 text-sm font-semibold text-white">
+          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
             {formatUsd(curve.hourlyCarryFor1kUsd, 4)}
           </div>
         </div>
@@ -729,21 +729,21 @@ export default function PacificaRiskRoomPage() {
     : [];
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#05070d] text-slate-100">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_8%,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_92%_12%,rgba(244,63,94,0.12),transparent_22%),linear-gradient(135deg,#05070d_0%,#08111f_52%,#060914_100%)]" />
-      <div className="fixed inset-0 -z-10 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,.3)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.3)_1px,transparent_1px)] [background-size:48px_48px]" />
+    <main className="min-h-screen overflow-hidden bg-[#07100f] text-[#f7f1df]">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_8%,rgba(101,243,224,0.17),transparent_27%),radial-gradient(circle_at_92%_12%,rgba(216,255,106,0.12),transparent_22%),radial-gradient(circle_at_70%_80%,rgba(255,122,89,0.10),transparent_28%),linear-gradient(135deg,#07100f_0%,#0b1817_52%,#050807_100%)]" />
+      <div className="fixed inset-0 -z-10 risk-grid opacity-50" />
 
       <div className="mx-auto max-w-[1540px] px-4 py-4 md:px-6">
         <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="rounded-[32px] border border-white/10 bg-[#0a0f1c]/95 p-4 shadow-[0_28px_120px_rgba(2,6,23,0.45)] xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)]">
-            <div className="rounded-[24px] border border-cyan-300/15 bg-cyan-300/10 p-4">
+          <aside className="order-2 rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95 p-4 shadow-[0_28px_120px_rgba(2,6,23,0.45)] xl:order-1 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)]">
+            <div className="rounded-[24px] border border-[#65f3e0]/25 bg-[#65f3e0]/10 p-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-[#06111d]">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#65f3e0] text-[#07100f]">
                   <Radar className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-base font-semibold text-white">Pacifica Account Health</div>
-                  <div className="text-sm text-cyan-100/70">Risk before leverage</div>
+                  <div className="font-display text-lg font-semibold tracking-[-0.045em] text-[#f7f1df]">Pacifica Account Health</div>
+                  <div className="text-sm text-[#bafdf4]/70">Risk before leverage</div>
                 </div>
               </div>
 
@@ -760,24 +760,24 @@ export default function PacificaRiskRoomPage() {
             </div>
 
             <form
-              className="mt-5 space-y-3 rounded-[24px] border border-white/10 bg-[#101827] p-4"
+              className="mt-5 space-y-3 rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 setSubmittedAccount(accountInput.trim());
               }}
             >
-              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
                 Pacifica wallet
               </div>
               <input
                 value={accountInput}
                 onChange={(event) => setAccountInput(event.target.value)}
                 placeholder="Wallet or subaccount address"
-                className="w-full rounded-[18px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/50"
+                className="w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f] px-4 py-3 text-sm text-[#f7f1df] outline-none transition placeholder:text-[#7f9189] focus:border-[#65f3e0]/60"
               />
               <button
                 type="submit"
-                className="w-full rounded-[16px] bg-cyan-300 px-4 py-3 text-sm font-semibold text-[#06111d] transition hover:bg-cyan-200"
+                className="w-full rounded-[16px] bg-[#65f3e0] px-4 py-3 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
               >
                 Check health
               </button>
@@ -787,16 +787,16 @@ export default function PacificaRiskRoomPage() {
                   setAccountInput("");
                   setSubmittedAccount("");
                 }}
-                className="w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+                className="w-full rounded-[16px] border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-[#e9e0cf] transition hover:bg-white/[0.08]"
               >
                 Use sample mode
               </button>
             </form>
 
-            <div className={cn("mt-5 rounded-[24px] border bg-[#101827] p-4", riskTone.border, riskTone.glow)}>
+            <div className={cn("mt-5 rounded-[24px] border bg-[#101b18] p-4", riskTone.border, riskTone.glow)}>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
                     Health score
                   </div>
                   <div className={cn("mt-2 flex items-center gap-2 text-sm font-semibold", riskTone.text)}>
@@ -807,16 +807,16 @@ export default function PacificaRiskRoomPage() {
                 <button
                   type="button"
                   onClick={() => setRefreshNonce((value) => value + 1)}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition hover:bg-white/[0.08]"
+                  className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-3 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
                 >
                   {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                   Refresh
                 </button>
               </div>
-              <div className="mt-4 text-[52px] font-semibold leading-none tracking-[-0.07em] text-white">
+              <div className="font-display mt-4 text-[58px] font-semibold leading-none tracking-[-0.08em] text-[#f7f1df]">
                 {riskSummary ? riskSummary.score : "--"}
               </div>
-              <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+              <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
                 out of 100
               </div>
             </div>
@@ -824,7 +824,7 @@ export default function PacificaRiskRoomPage() {
             {!compactMode ? (
               <Link
                 href="https://docs.pacifica.fi/api-documentation/api"
-                className="mt-5 flex items-center justify-between rounded-[18px] border border-white/10 bg-[#101827] px-4 py-3 text-sm text-slate-300 transition hover:bg-white/[0.05]"
+                className="mt-5 flex items-center justify-between rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#cbd6ce] transition hover:bg-white/[0.05]"
               >
                 <span className="flex items-center gap-3">
                   <BookOpen className="h-4 w-4" />
@@ -835,11 +835,11 @@ export default function PacificaRiskRoomPage() {
             ) : null}
           </aside>
 
-          <div className="space-y-4">
+          <div className="order-1 space-y-4 xl:order-2">
             <section
               id="health"
               className={cn(
-                "rounded-[34px] border bg-[#0a0f1c]/95 p-5 shadow-[0_30px_140px_rgba(2,6,23,0.45)] md:p-7",
+                "grain rounded-[38px] border bg-[#0c1715]/95 p-5 shadow-[0_34px_150px_rgba(0,0,0,0.42)] md:p-7",
                 riskTone.border,
               )}
             >
@@ -851,19 +851,19 @@ export default function PacificaRiskRoomPage() {
                       {payload ? `Updated ${new Date(payload.generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "Loading"}
                     </StatusPill>
                   </div>
-                  <h1 className="mt-5 max-w-4xl text-[40px] font-semibold leading-[0.95] tracking-[-0.07em] text-white md:text-[64px]">
+                  <h1 className="font-display mt-5 max-w-4xl text-[40px] font-extrabold leading-[0.96] tracking-[-0.06em] text-[#f7f1df] md:text-[72px] md:leading-[0.92] md:tracking-[-0.085em]">
                     Know your Pacifica liquidation risk before adding leverage.
                   </h1>
-                  <p className="mt-5 max-w-3xl text-base leading-8 text-slate-300">
+                  <p className="mt-5 max-w-3xl text-base leading-8 text-[#cbd6ce]">
                     A live account health monitor that turns Pacifica equity, position exposure,
                     liquidation distance, funding, and recent activity into one clear safety decision.
                   </p>
                 </div>
 
-                <div className="rounded-[28px] border border-white/10 bg-[#101827] p-5">
+                <div className="soft-scan rounded-[30px] border border-[#f7f1df]/12 bg-[#101b18] p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                      <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
                         Current decision
                       </div>
                       <div className={cn("mt-3 flex items-center gap-2 text-xl font-semibold", riskTone.text)}>
@@ -875,25 +875,25 @@ export default function PacificaRiskRoomPage() {
                       {riskSummary ? `${riskSummary.score}/100` : "--"}
                     </StatusPill>
                   </div>
-                  <div className="mt-5 rounded-[22px] border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200">
+                  <div className="mt-5 rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 p-4 text-sm leading-7 text-[#e9e0cf]">
                     {riskSummary?.verdict || "Loading current Pacifica account state..."}
                   </div>
-                  <div className="mt-4 text-sm leading-6 text-slate-500">
+                  <div className="mt-4 text-sm leading-6 text-[#7f9189]">
                     Account: {payload ? shortAddress(payload.account.accountId) : shortAddress(DEFAULT_LIVE_PACIFICA_ACCOUNT)}
                   </div>
                 </div>
               </div>
 
               {error ? (
-                <div className="mt-5 rounded-[20px] border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                <div className="mt-5 rounded-[20px] border border-[#ff7a59]/28 bg-[#ff7a59]/10 px-4 py-3 text-sm text-[#ffd2c6]">
                   {error}
                 </div>
               ) : null}
             </section>
 
             {isLoading && !payload ? (
-              <div className="flex min-h-[360px] items-center justify-center rounded-[32px] border border-white/10 bg-[#0a0f1c]/95">
-                <div className="flex items-center gap-3 text-slate-300">
+              <div className="flex min-h-[360px] items-center justify-center rounded-[32px] border border-[#f7f1df]/12 bg-[#0c1715]/95">
+                <div className="flex items-center gap-3 text-[#cbd6ce]">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   Loading Pacifica account health...
                 </div>
@@ -975,7 +975,7 @@ export default function PacificaRiskRoomPage() {
                         activeNotional={primaryPosition?.notionalUsd || 0}
                       />
                     ) : (
-                      <div className="rounded-[24px] border border-white/10 bg-[#101827] p-5 text-sm text-slate-400">
+                      <div className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm text-[#a8b6ac]">
                         No funding curve was returned for the active position.
                       </div>
                     )}
@@ -1012,21 +1012,21 @@ export default function PacificaRiskRoomPage() {
                         activityItems.map((item, index) => (
                           <article
                             key={`${item.title}-${index}`}
-                            className="rounded-[20px] border border-white/10 bg-[#101827] p-4"
+                            className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div>
-                                <div className="text-sm font-semibold text-white">{item.title}</div>
-                                <div className="mt-2 text-sm text-slate-400">{item.detail}</div>
+                                <div className="text-sm font-semibold text-[#f7f1df]">{item.title}</div>
+                                <div className="mt-2 text-sm text-[#a8b6ac]">{item.detail}</div>
                               </div>
-                              <div className="shrink-0 text-xs text-slate-500">
+                              <div className="shrink-0 text-xs text-[#7f9189]">
                                 {formatTime(item.timestamp)}
                               </div>
                             </div>
                           </article>
                         ))
                       ) : (
-                        <div className="rounded-[20px] border border-white/10 bg-[#101827] p-5 text-sm text-slate-400">
+                        <div className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-5 text-sm text-[#a8b6ac]">
                           No recent fills or open orders were returned.
                         </div>
                       )}
@@ -1042,18 +1042,18 @@ export default function PacificaRiskRoomPage() {
                       {riskSummary?.signals.map((signal) => (
                         <article
                           key={signal.title}
-                          className="rounded-[20px] border border-white/10 bg-[#101827] p-4"
+                          className="rounded-[20px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-white">{signal.title}</div>
+                            <div className="text-sm font-semibold text-[#f7f1df]">{signal.title}</div>
                             <StatusPill tone={signal.tone === "critical" ? "risk" : "soft"}>
                               {signal.tone}
                             </StatusPill>
                           </div>
-                          <div className="mt-3 text-[28px] font-semibold leading-none tracking-[-0.05em] text-white">
+                          <div className="mt-3 text-[28px] font-semibold leading-none tracking-[-0.05em] text-[#f7f1df]">
                             {signal.value}
                           </div>
-                          <div className="mt-2 text-sm leading-6 text-slate-400">{signal.detail}</div>
+                          <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">{signal.detail}</div>
                         </article>
                       ))}
                     </div>
@@ -1067,16 +1067,16 @@ export default function PacificaRiskRoomPage() {
                   body="The product uses Pacifica REST data for account state, positions, funding, market prices, and recent trades."
                 >
                   <div className="grid gap-4 xl:grid-cols-[0.9fr,1.1fr]">
-                    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
-                      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
+                      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
                         Portfolio replay
                       </div>
-                      <div className="mt-4 rounded-[18px] border border-white/10 bg-black/20 px-3 py-4">
+                      <div className="mt-4 rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-3 py-4">
                         <Sparkline values={portfolioSeries} stroke="#34d399" />
                       </div>
                     </article>
 
-                    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
+                    <article className="rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4">
                       <div className="flex flex-wrap gap-2">
                         {payload.dataSources.map((source) => (
                           <StatusPill key={source} tone="soft">
@@ -1089,7 +1089,7 @@ export default function PacificaRiskRoomPage() {
                           {payload.notes.map((note) => (
                             <div
                               key={note}
-                              className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-slate-400"
+                              className="rounded-[16px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3 text-sm leading-6 text-[#a8b6ac]"
                             >
                               {note}
                             </div>
