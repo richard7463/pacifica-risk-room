@@ -1,36 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   BellRing,
   BookmarkPlus,
   BookOpen,
-  CandlestickChart,
+  ChevronLeft,
   ChevronRight,
-  CircleAlert,
   Copy,
   ExternalLink,
   FlaskConical,
   Loader2,
+  PlugZap,
   Radar,
   RefreshCcw,
   ShieldCheck,
   ShieldX,
+  Sparkles,
   Target,
   Trash2,
-  Waves,
+  Wallet,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_LIVE_PACIFICA_ACCOUNT } from "@/lib/pacificaRiskRoom";
 import type {
   PacificaFundingCurve,
   PacificaOrder,
-  PacificaPosition,
   PacificaRiskRoomResponse,
   PacificaRiskStatus,
   PacificaTradeHistoryItem,
@@ -44,12 +44,12 @@ import {
   type PacificaPlannerOption,
   type PacificaScenarioAction,
   type PacificaScenarioInput,
-  type PacificaScenarioResult,
   type PacificaWatchItem,
 } from "@/lib/pacificaDecision";
 
 const DEFAULT_SYMBOLS = "BTC, ETH, SOL, XRP, HYPE, PUMP";
 const WATCH_STORAGE_KEY = "pacifica-risk-room.watch-items";
+const GUIDE_STORAGE_KEY = "pacifica-risk-room.guide-seen";
 
 const SOURCE_LABELS = {
   live: "Live",
@@ -65,6 +65,134 @@ const WORKSPACE_TABS = [
 ] as const;
 
 type WorkspaceId = (typeof WORKSPACE_TABS)[number]["id"];
+
+type WalletFamily = "solana" | "ethereum";
+
+interface SolanaPublicKeyLike {
+  toString(): string;
+}
+
+interface SolanaWalletProvider {
+  isBackpack?: boolean;
+  isPhantom?: boolean;
+  isSolflare?: boolean;
+  publicKey?: SolanaPublicKeyLike | null;
+  connect: (
+    options?: { onlyIfTrusted?: boolean },
+  ) => Promise<{ publicKey?: SolanaPublicKeyLike | null } | void>;
+  disconnect?: () => Promise<void>;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+}
+
+interface EthereumWalletProvider {
+  isCoinbaseWallet?: boolean;
+  isMetaMask?: boolean;
+  request: (args: {
+    method: string;
+    params?: unknown[] | Record<string, unknown>;
+  }) => Promise<unknown>;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+}
+
+type WalletProviderDescriptor =
+  | {
+      family: "solana";
+      label: string;
+      provider: SolanaWalletProvider;
+    }
+  | {
+      family: "ethereum";
+      label: string;
+      provider: EthereumWalletProvider;
+    };
+
+interface ConnectedWalletState {
+  address: string;
+  family: WalletFamily;
+  label: string;
+}
+
+const GUIDE_STEPS = [
+  {
+    id: "connect",
+    label: "Connect",
+    eyebrow: "Step 1",
+    title: "Link a real wallet or paste any Pacifica account",
+    summary:
+      "Use the top-right wallet button to sync a browser wallet into the desk instantly. The account field stays editable, so you can still inspect any Pacifica account manually.",
+    bullets: [
+      "Phantom, Backpack, Solflare, and MetaMask are supported in-browser.",
+      "Once connected, the account field is auto-filled and the desk refreshes immediately.",
+      "You can disconnect at any time without losing saved watches or scenario setups.",
+    ],
+    metricLabel: "Wallet sync",
+    metricValue: "Live context",
+    workspace: "overview" as WorkspaceId,
+  },
+  {
+    id: "desk",
+    label: "Desk",
+    eyebrow: "Step 2",
+    title: "Read the desk first before touching leverage",
+    summary:
+      "The Desk workspace is the health check. It tells you whether the current book is safe enough to add, too tight to hold, or already demanding a reduction.",
+    bullets: [
+      "Read the risk score, exposure multiple, and liquidation buffer together.",
+      "If liq buffer is tight or exposure dominates equity, treat the desk as stressed.",
+      "Use the operator playbook to understand why the verdict is high risk or healthy.",
+    ],
+    metricLabel: "Main signal",
+    metricValue: "Risk score + liq buffer",
+    workspace: "overview" as WorkspaceId,
+  },
+  {
+    id: "scenario",
+    label: "Scenario",
+    eyebrow: "Step 3",
+    title: "Test the next trade before you actually place it",
+    summary:
+      "Scenario Lab converts the app from dashboard to decision tool. Add, reduce, rotate, or top up collateral and compare the projected desk against the live one.",
+    bullets: [
+      "Start with Reduce or collateral top-up if the desk is already stressed.",
+      "Watch how risk score, exposure multiple, and funding drag change together.",
+      "A projected score going down means the next trade makes the desk worse, not better.",
+    ],
+    metricLabel: "Decision mode",
+    metricValue: "What-if simulation",
+    workspace: "scenario" as WorkspaceId,
+  },
+  {
+    id: "watch",
+    label: "Watch",
+    eyebrow: "Step 4",
+    title: "Save thresholds so the app becomes a monitoring product",
+    summary:
+      "Watch Mode is for repeat use. Save desks with a minimum score, max exposure, and liquidation floor so you can reload and review them in seconds.",
+    bullets: [
+      "Create one watch per trading wallet or strategy sleeve.",
+      "Triggered thresholds surface which desk needs attention first.",
+      "Saved watches also give you a shareable review link for demos and ops handoff.",
+    ],
+    metricLabel: "Retention loop",
+    metricValue: "Saved alerts",
+    workspace: "watch" as WorkspaceId,
+  },
+] as const;
+
+declare global {
+  interface Window {
+    backpack?: {
+      solana?: SolanaWalletProvider;
+    };
+    ethereum?: EthereumWalletProvider;
+    phantom?: {
+      solana?: SolanaWalletProvider;
+    };
+    solflare?: SolanaWalletProvider;
+  }
+}
 
 const RISK_TONES: Record<
   PacificaRiskStatus,
@@ -180,6 +308,46 @@ function positionSideLabel(side: string) {
 
 function formatSigned(value: number, suffix = "") {
   return `${value >= 0 ? "+" : ""}${value.toFixed(0)}${suffix}`;
+}
+
+function resolveWalletProvider(): WalletProviderDescriptor | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (window.backpack?.solana) {
+    return {
+      family: "solana",
+      label: "Backpack",
+      provider: window.backpack.solana,
+    };
+  }
+
+  if (window.phantom?.solana) {
+    return {
+      family: "solana",
+      label: "Phantom",
+      provider: window.phantom.solana,
+    };
+  }
+
+  if (window.solflare) {
+    return {
+      family: "solana",
+      label: "Solflare",
+      provider: window.solflare,
+    };
+  }
+
+  if (window.ethereum) {
+    return {
+      family: "ethereum",
+      label: window.ethereum.isCoinbaseWallet ? "Coinbase Wallet" : "MetaMask",
+      provider: window.ethereum,
+    };
+  }
+
+  return null;
 }
 
 function StatusPill({
@@ -670,6 +838,181 @@ export default function PacificaRiskRoomPage() {
   });
   const [watchSnapshots, setWatchSnapshots] = useState<Record<string, WatchSnapshotState>>({});
   const [copiedWatchId, setCopiedWatchId] = useState("");
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideStepIndex, setGuideStepIndex] = useState(0);
+  const [walletStatus, setWalletStatus] = useState<"idle" | "connecting" | "connected">(
+    "idle",
+  );
+  const [walletError, setWalletError] = useState("");
+  const [connectedWallet, setConnectedWallet] = useState<ConnectedWalletState | null>(null);
+  const walletProviderRef = useRef<WalletProviderDescriptor | null>(null);
+  const walletCleanupRef = useRef<(() => void) | null>(null);
+
+  const closeGuide = (persist = true) => {
+    setGuideOpen(false);
+    if (persist) {
+      try {
+        window.localStorage.setItem(GUIDE_STORAGE_KEY, "1");
+      } catch {
+        // ignore browser storage restrictions
+      }
+    }
+  };
+
+  const openGuide = (step = 0) => {
+    setGuideStepIndex(step);
+    setGuideOpen(true);
+  };
+
+  const syncConnectedWallet = (
+    address: string,
+    descriptor: Pick<WalletProviderDescriptor, "family" | "label">,
+  ) => {
+    setConnectedWallet({
+      address,
+      family: descriptor.family,
+      label: descriptor.label,
+    });
+    setWalletStatus("connected");
+    setWalletError("");
+    setAccountInput(address);
+    setSubmittedAccount(address);
+    setWatchLabel((current) => current || `Desk ${shortAddress(address)}`);
+  };
+
+  const clearWalletListeners = () => {
+    walletCleanupRef.current?.();
+    walletCleanupRef.current = null;
+  };
+
+  const clearWalletConnection = (keepDeskInput = true, disconnectProvider = true) => {
+    clearWalletListeners();
+    const descriptor = walletProviderRef.current;
+    walletProviderRef.current = null;
+    setConnectedWallet(null);
+    setWalletStatus("idle");
+    setWalletError("");
+
+    if (!keepDeskInput) {
+      setAccountInput("");
+      setSubmittedAccount("");
+    }
+
+    if (disconnectProvider && descriptor?.family === "solana") {
+      descriptor.provider.disconnect?.().catch(() => {
+        // ignore wallet disconnect errors
+      });
+    }
+  };
+
+  const attachWalletListeners = (descriptor: WalletProviderDescriptor) => {
+    clearWalletListeners();
+
+    if (descriptor.family === "solana") {
+      const handleAccountChanged = (...args: unknown[]) => {
+        const nextKey = (args[0] as SolanaPublicKeyLike | null | undefined) || null;
+        const nextAddress = nextKey?.toString() || "";
+        if (!nextAddress) {
+          clearWalletConnection(true, false);
+          return;
+        }
+
+        syncConnectedWallet(nextAddress, descriptor);
+      };
+      const handleDisconnect = () => {
+        clearWalletConnection(true, false);
+      };
+
+      descriptor.provider.on?.("accountChanged", handleAccountChanged);
+      descriptor.provider.on?.("disconnect", handleDisconnect);
+      walletCleanupRef.current = () => {
+        descriptor.provider.removeListener?.("accountChanged", handleAccountChanged);
+        descriptor.provider.removeListener?.("disconnect", handleDisconnect);
+      };
+
+      return;
+    }
+
+    const handleAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0];
+      const nextAddress =
+        Array.isArray(accounts) && accounts.length ? String(accounts[0]) : "";
+
+      if (!nextAddress) {
+        clearWalletConnection(true, false);
+        return;
+      }
+
+      syncConnectedWallet(nextAddress, descriptor);
+    };
+    const handleDisconnect = () => {
+      clearWalletConnection(true, false);
+    };
+
+    descriptor.provider.on?.("accountsChanged", handleAccountsChanged);
+    descriptor.provider.on?.("disconnect", handleDisconnect);
+    walletCleanupRef.current = () => {
+      descriptor.provider.removeListener?.("accountsChanged", handleAccountsChanged);
+      descriptor.provider.removeListener?.("disconnect", handleDisconnect);
+    };
+  };
+
+  async function handleConnectWallet() {
+    setWalletError("");
+    setWalletStatus("connecting");
+
+    const descriptor = resolveWalletProvider();
+    if (!descriptor) {
+      setWalletStatus("idle");
+      setWalletError(
+        "No supported browser wallet was found. Install Phantom, Backpack, Solflare, or MetaMask.",
+      );
+      openGuide(0);
+      return;
+    }
+
+    walletProviderRef.current = descriptor;
+
+    try {
+      let nextAddress = "";
+
+      if (descriptor.family === "solana") {
+        const connection = await descriptor.provider.connect();
+        nextAddress =
+          descriptor.provider.publicKey?.toString() ||
+          connection?.publicKey?.toString() ||
+          "";
+      } else {
+        const accounts = await descriptor.provider.request({
+          method: "eth_requestAccounts",
+        });
+        nextAddress =
+          Array.isArray(accounts) && accounts.length ? String(accounts[0]) : "";
+      }
+
+      if (!nextAddress) {
+        throw new Error("Wallet connected, but no address was returned.");
+      }
+
+      attachWalletListeners(descriptor);
+      syncConnectedWallet(nextAddress, descriptor);
+      setGuideStepIndex((current) => Math.max(current, 1));
+    } catch (connectionError) {
+      walletProviderRef.current = null;
+      clearWalletListeners();
+      setWalletStatus("idle");
+      setConnectedWallet(null);
+      setWalletError(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "Wallet connection was interrupted.",
+      );
+    }
+  }
+
+  async function handleDisconnectWallet() {
+    clearWalletConnection();
+  }
 
   useEffect(() => {
     try {
@@ -685,6 +1028,58 @@ export default function PacificaRiskRoomPage() {
     } finally {
       setWatchStorageReady(true);
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const hasSeenGuide = window.localStorage.getItem(GUIDE_STORAGE_KEY);
+      if (!hasSeenGuide) {
+        setGuideOpen(true);
+      }
+    } catch {
+      setGuideOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateWallet = async () => {
+      const descriptor = resolveWalletProvider();
+      if (!descriptor) {
+        return;
+      }
+
+      try {
+        if (descriptor.family === "solana") {
+          const address = descriptor.provider.publicKey?.toString() || "";
+          if (address && !cancelled) {
+            walletProviderRef.current = descriptor;
+            attachWalletListeners(descriptor);
+            syncConnectedWallet(address, descriptor);
+          }
+          return;
+        }
+
+        const accounts = await descriptor.provider.request({ method: "eth_accounts" });
+        const address =
+          Array.isArray(accounts) && accounts.length ? String(accounts[0]) : "";
+        if (address && !cancelled) {
+          walletProviderRef.current = descriptor;
+          attachWalletListeners(descriptor);
+          syncConnectedWallet(address, descriptor);
+        }
+      } catch {
+        // ignore wallet hydration issues on first paint
+      }
+    };
+
+    hydrateWallet();
+
+    return () => {
+      cancelled = true;
+      clearWalletListeners();
+    };
   }, []);
 
   useEffect(() => {
@@ -980,6 +1375,8 @@ export default function PacificaRiskRoomPage() {
       )
     : 1000;
   const selectedMarketMaxLeverage = selectedMarket?.maxLeverage || 10;
+  const activeGuideStep = GUIDE_STEPS[guideStepIndex] || GUIDE_STEPS[0];
+  const guideProgress = ((guideStepIndex + 1) / GUIDE_STEPS.length) * 100;
 
   function handlePlannerLoad(option: PacificaPlannerOption) {
     setScenarioInput(option.scenario);
@@ -1029,6 +1426,11 @@ export default function PacificaRiskRoomPage() {
       maxFundingDragUsd: item.maxFundingDragUsd,
     });
     setActiveWorkspace("watch");
+  }
+
+  function handleGuideWorkspace(workspace: WorkspaceId) {
+    setActiveWorkspace(workspace);
+    closeGuide();
   }
 
   function handleDeleteWatch(id: string) {
@@ -1096,12 +1498,36 @@ export default function PacificaRiskRoomPage() {
                 <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
                   Pacifica wallet
                 </div>
+                {connectedWallet ? (
+                  <div className="mt-3 rounded-[18px] border border-[#65f3e0]/20 bg-[#65f3e0]/10 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#bafdf4]">
+                          {connectedWallet.label} linked
+                        </div>
+                        <div className="mt-1 text-xs text-[#bafdf4]/70">
+                          {shortAddress(connectedWallet.address)} synced into the desk
+                        </div>
+                      </div>
+                      <StatusPill>{connectedWallet.family}</StatusPill>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3 text-sm leading-6 text-[#a8b6ac]">
+                    Connect a browser wallet from the header or paste any Pacifica account below.
+                  </div>
+                )}
                 <input
                   value={accountInput}
                   onChange={(event) => setAccountInput(event.target.value)}
                   placeholder="Wallet or subaccount address"
                   className="mt-3 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f] px-4 py-3 text-sm text-[#f7f1df] outline-none transition placeholder:text-[#7f9189] focus:border-[#65f3e0]/60"
                 />
+                {walletError ? (
+                  <div className="mt-3 rounded-[16px] border border-[#ff7a59]/24 bg-[#ff7a59]/10 px-4 py-3 text-sm text-[#ffd2c6]">
+                    {walletError}
+                  </div>
+                ) : null}
                 <div className="mt-3 grid gap-2">
                   <button
                     type="submit"
@@ -1243,6 +1669,14 @@ export default function PacificaRiskRoomPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
+                    onClick={() => openGuide(0)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Guide
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setRefreshNonce((value) => value + 1)}
                     className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
                   >
@@ -1260,6 +1694,29 @@ export default function PacificaRiskRoomPage() {
                   >
                     <BookmarkPlus className="h-4 w-4" />
                     Save Watch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={connectedWallet ? handleDisconnectWallet : handleConnectWallet}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
+                      connectedWallet
+                        ? "border border-[#65f3e0]/24 bg-[#65f3e0]/10 text-[#bafdf4] hover:bg-[#65f3e0]/16"
+                        : "bg-[#d8ff6a] text-[#07100f] hover:bg-[#ebff9b]",
+                    )}
+                  >
+                    {walletStatus === "connecting" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : connectedWallet ? (
+                      <PlugZap className="h-4 w-4" />
+                    ) : (
+                      <Wallet className="h-4 w-4" />
+                    )}
+                    {walletStatus === "connecting"
+                      ? "Connecting..."
+                      : connectedWallet
+                        ? `${connectedWallet.label} ${shortAddress(connectedWallet.address)}`
+                        : "Connect Wallet"}
                   </button>
                 </div>
               </div>
@@ -2145,6 +2602,276 @@ export default function PacificaRiskRoomPage() {
           ) : null}
         </div>
       </div>
+
+      {guideOpen ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#020807]/82 px-4 py-6 backdrop-blur-md md:px-6 md:py-8">
+          <div className="mx-auto flex min-h-full max-w-[1220px] items-center justify-center">
+            <div className="grain rise-in grid w-full overflow-hidden rounded-[36px] border border-[#f7f1df]/14 bg-[#091210]/95 shadow-[0_40px_180px_rgba(0,0,0,0.55)] lg:grid-cols-[320px_minmax(0,1fr)]">
+              <aside className="border-b border-[#f7f1df]/10 bg-[#08110f]/98 p-5 lg:border-b-0 lg:border-r lg:p-6">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-[#7f9189]">
+                      Quickstart
+                    </div>
+                    <div className="font-display mt-2 text-[34px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+                      Pacifica Guide
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => closeGuide()}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#f7f1df]/12 bg-white/[0.04] text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                    aria-label="Close guide"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-5 rounded-[24px] border border-[#65f3e0]/18 bg-[linear-gradient(145deg,rgba(101,243,224,0.18),rgba(216,255,106,0.08),rgba(9,18,16,0.88))] p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#65f3e0] text-[#07100f]">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-[#f7f1df]">
+                        30-second flow
+                      </div>
+                      <div className="mt-1 text-sm text-[#d6e5db]">
+                        Connect a wallet, read the desk, stress test the next trade, then save a watch.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 h-2 rounded-full bg-black/20">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#65f3e0] via-[#d8ff6a] to-[#ff7a59]"
+                      style={{ width: `${guideProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-[#d6e5db]">
+                    <span>{activeGuideStep.eyebrow}</span>
+                    <span>{guideStepIndex + 1} / {GUIDE_STEPS.length}</span>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  {GUIDE_STEPS.map((step, index) => (
+                    <button
+                      key={step.id}
+                      type="button"
+                      onClick={() => setGuideStepIndex(index)}
+                      className={cn(
+                        "w-full rounded-[22px] border px-4 py-4 text-left transition",
+                        index === guideStepIndex
+                          ? "border-[#65f3e0]/24 bg-[#65f3e0]/10"
+                          : "border-[#f7f1df]/10 bg-white/[0.03] hover:bg-white/[0.06]",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                            {step.eyebrow}
+                          </div>
+                          <div className="mt-2 text-sm font-semibold text-[#f7f1df]">
+                            {step.title}
+                          </div>
+                        </div>
+                        <StatusPill tone={index === guideStepIndex ? "default" : "soft"}>
+                          {step.label}
+                        </StatusPill>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-[24px] border border-[#f7f1df]/10 bg-white/[0.03] p-4">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                    Current state
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-[#c7d0c6]">
+                    {connectedWallet
+                      ? `${connectedWallet.label} is linked and synced to ${shortAddress(connectedWallet.address)}.`
+                      : "No wallet is linked yet. You can still paste any Pacifica account into the desk."}
+                  </div>
+                </div>
+              </aside>
+
+              <section className="relative overflow-hidden p-5 md:p-7">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top_left,rgba(101,243,224,0.22),transparent_40%),radial-gradient(circle_at_top_right,rgba(216,255,106,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
+                <div className="relative">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="max-w-3xl">
+                      <StatusPill>{activeGuideStep.metricLabel}</StatusPill>
+                      <div className="font-display mt-4 text-[42px] font-semibold leading-[0.94] tracking-[-0.07em] text-[#f7f1df] md:text-[54px]">
+                        {activeGuideStep.title}
+                      </div>
+                      <div className="mt-4 max-w-2xl text-base leading-8 text-[#d6e5db]">
+                        {activeGuideStep.summary}
+                      </div>
+                    </div>
+                    <div className="min-w-[220px] rounded-[26px] border border-[#f7f1df]/12 bg-[#07100f]/72 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.25)]">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
+                        Why it matters
+                      </div>
+                      <div className="font-display mt-3 text-[34px] font-semibold tracking-[-0.06em] text-[#f7f1df]">
+                        {activeGuideStep.metricValue}
+                      </div>
+                      <div className="mt-3 text-sm leading-6 text-[#a8b6ac]">
+                        The workspace is designed to move you from raw account data to a concrete next action.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 xl:grid-cols-[1.1fr,0.9fr]">
+                    <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[#0e1917]/92 p-5 shadow-[0_24px_100px_rgba(0,0,0,0.25)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#65f3e0]/14 text-[#bafdf4]">
+                          {activeGuideStep.id === "connect" ? (
+                            <Wallet className="h-5 w-5" />
+                          ) : activeGuideStep.id === "scenario" ? (
+                            <FlaskConical className="h-5 w-5" />
+                          ) : activeGuideStep.id === "watch" ? (
+                            <BellRing className="h-5 w-5" />
+                          ) : (
+                            <ShieldCheck className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-[#f7f1df]">
+                            How to use it
+                          </div>
+                          <div className="mt-1 text-sm text-[#a8b6ac]">
+                            Follow this flow and the app becomes much easier to read.
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        {activeGuideStep.bullets.map((bullet) => (
+                          <div
+                            key={bullet}
+                            className="flex items-start gap-3 rounded-[22px] border border-[#f7f1df]/10 bg-[#07100f]/65 px-4 py-4"
+                          >
+                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#d8ff6a]/18 text-[#d8ff6a]">
+                              <ChevronRight className="h-4 w-4" />
+                            </div>
+                            <div className="text-sm leading-7 text-[#d6e5db]">{bullet}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4">
+                      <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[linear-gradient(160deg,rgba(101,243,224,0.08),rgba(9,18,16,0.9),rgba(255,122,89,0.08))] p-5">
+                        <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
+                          Learn by doing
+                        </div>
+                        <div className="mt-3 text-sm leading-7 text-[#d6e5db]">
+                          {activeGuideStep.id === "connect"
+                            ? "Link a wallet now, then the desk will refresh against the connected address without copying and pasting anything."
+                            : activeGuideStep.id === "desk"
+                              ? "Open the Desk and read the top three numbers first: risk score, exposure versus equity, and liquidation buffer."
+                              : activeGuideStep.id === "scenario"
+                                ? "Open Scenario and test a Reduce or collateral top-up before trying any fresh directional add."
+                                : "Open Watch and save the current desk as an alert profile you can reload later."}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (activeGuideStep.id === "connect") {
+                              if (connectedWallet) {
+                                handleGuideWorkspace("overview");
+                                return;
+                              }
+
+                              void handleConnectWallet();
+                              return;
+                            }
+
+                            handleGuideWorkspace(activeGuideStep.workspace);
+                          }}
+                          className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#65f3e0] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#bafdf4]"
+                        >
+                          {activeGuideStep.id === "connect"
+                            ? connectedWallet
+                              ? "Open Desk"
+                              : "Connect Wallet"
+                            : `Open ${WORKSPACE_TABS.find((tab) => tab.id === activeGuideStep.workspace)?.label || "Workspace"}`}
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="rounded-[28px] border border-[#f7f1df]/12 bg-[#07100f]/72 p-5">
+                        <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7f9189]">
+                          Fast interpretation
+                        </div>
+                        <div className="mt-4 grid gap-3">
+                          <div className="rounded-[20px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4">
+                            <div className="text-sm font-semibold text-[#f7f1df]">
+                              Good
+                            </div>
+                            <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">
+                              Risk score rises, exposure drops, and liquidation buffer widens after your simulated action.
+                            </div>
+                          </div>
+                          <div className="rounded-[20px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4">
+                            <div className="text-sm font-semibold text-[#f7f1df]">
+                              Bad
+                            </div>
+                            <div className="mt-2 text-sm leading-6 text-[#a8b6ac]">
+                              Risk score falls, exposure stretches, or the liq buffer compresses. That means the next trade is making the desk weaker.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGuideStepIndex((current) => Math.max(0, current - 1))
+                        }
+                        disabled={guideStepIndex === 0}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => closeGuide()}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#cbd6ce] transition hover:bg-white/[0.08]"
+                      >
+                        Skip for now
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (guideStepIndex === GUIDE_STEPS.length - 1) {
+                          closeGuide();
+                          return;
+                        }
+
+                        setGuideStepIndex((current) =>
+                          Math.min(GUIDE_STEPS.length - 1, current + 1),
+                        );
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#d8ff6a] px-5 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#ebff9b]"
+                    >
+                      {guideStepIndex === GUIDE_STEPS.length - 1 ? "Finish Guide" : "Next Step"}
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
