@@ -13,19 +13,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pacifica Risk Room",
+  title: "Pacifica Account Health",
   description:
-    "Real-time risk, funding, liquidation, and account replay intelligence for Pacifica perpetuals.",
+    "Live account health, liquidation-risk, and funding analytics for Pacifica perpetuals.",
   openGraph: {
-    title: "Pacifica Risk Room",
+    title: "Pacifica Account Health",
     description:
-      "Real-time risk, funding, liquidation, and account replay intelligence for Pacifica perpetuals.",
+      "Live account health, liquidation-risk, and funding analytics for Pacifica perpetuals.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Pacifica Risk Room",
+    title: "Pacifica Account Health",
     description:
-      "Real-time risk, funding, liquidation, and account replay intelligence for Pacifica perpetuals.",
+      "Live account health, liquidation-risk, and funding analytics for Pacifica perpetuals.",
   },
 };
 

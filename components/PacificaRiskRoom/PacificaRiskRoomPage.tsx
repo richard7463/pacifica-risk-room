@@ -6,15 +6,11 @@ import { useSearchParams } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   BookOpen,
   CandlestickChart,
   CircleAlert,
   ExternalLink,
-  Github,
-  LayoutGrid,
   Loader2,
   Radar,
   RefreshCcw,
@@ -27,11 +23,13 @@ import { DEFAULT_LIVE_PACIFICA_ACCOUNT } from "@/lib/pacificaRiskRoom";
 import type {
   PacificaFundingCurve,
   PacificaOrder,
-  PacificaPositionHistoryItem,
+  PacificaPosition,
   PacificaRiskRoomResponse,
   PacificaRiskStatus,
   PacificaTradeHistoryItem,
 } from "@/lib/pacificaRiskRoom";
+
+const DEFAULT_SYMBOLS = "BTC, ETH, SOL, XRP, HYPE, PUMP";
 
 const SOURCE_LABELS = {
   live: "Live",
@@ -39,56 +37,51 @@ const SOURCE_LABELS = {
   none: "Unavailable",
 } as const;
 
+const NAV_ITEMS = [
+  { label: "Health", href: "#health", icon: ShieldCheck },
+  { label: "Position", href: "#position", icon: Activity },
+  { label: "Action", href: "#action", icon: CircleAlert },
+  { label: "Markets", href: "#markets", icon: CandlestickChart },
+  { label: "Funding", href: "#funding", icon: Waves },
+  { label: "Data", href: "#data", icon: BookOpen },
+] as const;
+
 const RISK_TONES: Record<
   PacificaRiskStatus,
   {
     badge: string;
+    border: string;
     glow: string;
     icon: typeof ShieldCheck;
-    line: string;
-    number: string;
+    label: string;
+    text: string;
   }
 > = {
   stable: {
-    badge: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
-    glow: "shadow-[0_0_0_1px_rgba(16,185,129,0.12),0_16px_60px_rgba(16,185,129,0.16)]",
+    badge: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
+    border: "border-emerald-400/30",
+    glow: "shadow-[0_30px_120px_rgba(16,185,129,0.16)]",
     icon: ShieldCheck,
-    line: "bg-emerald-400",
-    number: "text-emerald-300",
+    label: "Healthy",
+    text: "text-emerald-200",
   },
   watch: {
-    badge: "border-amber-500/20 bg-amber-500/10 text-amber-300",
-    glow: "shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_16px_60px_rgba(245,158,11,0.14)]",
+    badge: "border-amber-400/25 bg-amber-400/10 text-amber-200",
+    border: "border-amber-400/30",
+    glow: "shadow-[0_30px_120px_rgba(245,158,11,0.15)]",
     icon: AlertTriangle,
-    line: "bg-amber-400",
-    number: "text-amber-300",
+    label: "Watch",
+    text: "text-amber-200",
   },
   critical: {
-    badge: "border-rose-500/20 bg-rose-500/10 text-rose-300",
-    glow: "shadow-[0_0_0_1px_rgba(244,63,94,0.12),0_16px_60px_rgba(244,63,94,0.14)]",
+    badge: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+    border: "border-rose-400/35",
+    glow: "shadow-[0_30px_120px_rgba(244,63,94,0.18)]",
     icon: ShieldX,
-    line: "bg-rose-400",
-    number: "text-rose-300",
+    label: "High risk",
+    text: "text-rose-200",
   },
 };
-
-const ACTION_LABELS = {
-  wait: "Wait",
-  probe: "Probe",
-  reduce: "Reduce",
-  hedge: "Hedge",
-} as const;
-
-const DEFAULT_SYMBOLS = "BTC, ETH, SOL, XRP, HYPE, PUMP";
-
-const NAV_ITEMS = [
-  { label: "Overview", href: "#overview", icon: LayoutGrid },
-  { label: "Markets", href: "#markets", icon: CandlestickChart },
-  { label: "Pressure", href: "#pressure", icon: Radar },
-  { label: "Carry", href: "#carry", icon: Waves },
-  { label: "Account", href: "#account", icon: Activity },
-  { label: "Plan", href: "#plan", icon: CircleAlert },
-] as const;
 
 const compactUsdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -122,6 +115,14 @@ function formatFundingRate(value: number) {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(4)}%`;
 }
 
+function formatPrice(value: number) {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  return value >= 100 ? formatUsd(value) : value.toFixed(value < 0.01 ? 6 : 4);
+}
+
 function formatTime(timestamp: number | null) {
   if (!timestamp) {
     return "n/a";
@@ -135,20 +136,43 @@ function formatTime(timestamp: number | null) {
   });
 }
 
+function shortAddress(address: string) {
+  if (address.length <= 14) {
+    return address;
+  }
+
+  return `${address.slice(0, 6)}...${address.slice(-6)}`;
+}
+
+function positionSideLabel(side: string) {
+  const normalized = side.toLowerCase();
+  if (normalized.includes("bid") || normalized.includes("long")) {
+    return "Long";
+  }
+
+  if (normalized.includes("ask") || normalized.includes("short")) {
+    return "Short";
+  }
+
+  return side || "Position";
+}
+
 function StatusPill({
   children,
   tone = "default",
 }: {
   children: ReactNode;
-  tone?: "default" | "soft";
+  tone?: "default" | "soft" | "risk";
 }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.22em]",
+        "inline-flex items-center rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em]",
         tone === "soft"
           ? "border-white/10 bg-white/[0.04] text-slate-300"
-          : "border-[#1f304f] bg-[#0d1730] text-[#7dd3fc]",
+          : tone === "risk"
+            ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
+            : "border-cyan-300/20 bg-cyan-300/10 text-cyan-200",
       )}
     >
       {children}
@@ -156,13 +180,14 @@ function StatusPill({
   );
 }
 
-function AppPanel({
+function Panel({
   id,
   eyebrow,
   title,
   body,
   action,
   children,
+  className,
 }: {
   id?: string;
   eyebrow: string;
@@ -170,18 +195,22 @@ function AppPanel({
   body?: string;
   action?: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
     <section
       id={id}
-      className="rounded-[28px] border border-white/10 bg-[#0b1120] p-5 shadow-[0_24px_80px_rgba(3,8,20,0.38)] md:p-6"
+      className={cn(
+        "rounded-[30px] border border-white/10 bg-[#0b111f]/95 p-5 shadow-[0_24px_90px_rgba(2,6,23,0.4)] md:p-6",
+        className,
+      )}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-slate-500">
             {eyebrow}
           </div>
-          <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.04em] text-white">
+          <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.045em] text-white">
             {title}
           </h2>
           {body ? (
@@ -195,59 +224,77 @@ function AppPanel({
   );
 }
 
-function MetricCard({
+function StatTile({
   label,
   value,
   detail,
-  accent = "cyan",
+  tone = "default",
 }: {
   label: string;
   value: string;
-  detail: string;
-  accent?: "cyan" | "emerald" | "amber" | "rose";
+  detail?: string;
+  tone?: "default" | "good" | "warn" | "danger";
 }) {
-  const accentTone =
-    accent === "emerald"
-      ? "bg-emerald-400"
-      : accent === "amber"
-        ? "bg-amber-400"
-        : accent === "rose"
-          ? "bg-rose-400"
-          : "bg-cyan-400";
-
   return (
-    <article className="rounded-[22px] border border-white/10 bg-[#10182c] p-4">
-      <div className="flex items-center gap-3">
-        <div className={cn("h-2.5 w-2.5 rounded-full", accentTone)} />
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-          {label}
-        </div>
+    <article
+      className={cn(
+        "rounded-[24px] border bg-[#101827] p-4",
+        tone === "good"
+          ? "border-emerald-400/20"
+          : tone === "warn"
+            ? "border-amber-400/20"
+            : tone === "danger"
+              ? "border-rose-400/25"
+              : "border-white/10",
+      )}
+    >
+      <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+        {label}
       </div>
-      <div className="mt-4 text-[30px] font-semibold leading-none tracking-[-0.05em] text-white">
+      <div className="mt-3 text-[30px] font-semibold leading-none tracking-[-0.055em] text-white">
         {value}
       </div>
-      <div className="mt-2 text-sm leading-6 text-slate-400">{detail}</div>
+      {detail ? <div className="mt-2 text-sm leading-6 text-slate-400">{detail}</div> : null}
     </article>
   );
 }
 
-function Sparkline({
-  values,
-  stroke,
+function ProgressBar({
+  value,
+  dangerAt,
 }: {
-  values: number[];
-  stroke: string;
+  value: number;
+  dangerAt: number;
 }) {
+  const pct = Math.max(4, Math.min(100, (value / dangerAt) * 100));
+  return (
+    <div className="h-3 rounded-full bg-white/10">
+      <div
+        className={cn(
+          "h-full rounded-full",
+          value < dangerAt * 0.6
+            ? "bg-rose-400"
+            : value < dangerAt
+              ? "bg-amber-300"
+              : "bg-emerald-300",
+        )}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
   if (values.length < 2) {
     return (
-      <div className="flex h-24 items-center justify-center rounded-[20px] border border-white/10 bg-[#0a1020] font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+      <div className="flex h-20 items-center justify-center rounded-[18px] border border-white/10 bg-black/20 font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
         No history
       </div>
     );
   }
 
   const width = 280;
-  const height = 96;
+  const height = 80;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -262,22 +309,22 @@ function Sparkline({
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="h-24 w-full overflow-visible"
+      className="h-20 w-full overflow-visible"
       preserveAspectRatio="none"
     >
       <polyline
         fill="none"
         stroke={stroke}
-        strokeWidth="4"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="4"
         points={points}
       />
     </svg>
   );
 }
 
-function SidebarNav() {
+function NavRail() {
   return (
     <nav className="space-y-1.5">
       {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
@@ -297,308 +344,273 @@ function SidebarNav() {
   );
 }
 
-function FocusMarketCard({
-  market,
-  funding,
-  safePlan,
-}: {
-  market: PacificaRiskRoomResponse["marketSnapshot"][number] | null;
-  funding: PacificaFundingCurve | null;
-  safePlan: PacificaRiskRoomResponse["riskSummary"]["safeOrderPlan"][number] | null;
-}) {
-  const values =
-    funding?.points
-      .slice()
-      .reverse()
-      .map((item) => item.nextFundingRate * 10000) || [];
+function buildTradeActivity(trade: PacificaTradeHistoryItem) {
+  return {
+    timestamp: trade.createdAt,
+    title: `${trade.symbol} ${trade.side.replaceAll("_", " ")}`,
+    detail: `${formatCompactUsd(trade.notionalUsd)} fill at ${formatPrice(trade.price)}`,
+  };
+}
 
-  if (!market) {
-    return (
-      <div className="rounded-[22px] border border-white/10 bg-[#10182c] p-4 text-sm text-slate-400">
-        Select a market from the watchlist to inspect funding, leverage limits, and
-        the current safe plan.
-      </div>
-    );
-  }
+function buildOrderActivity(order: PacificaOrder) {
+  return {
+    timestamp: order.createdAt,
+    title: `${order.symbol} ${order.orderType}`,
+    detail: `${order.side} ${order.amount} ${order.reduceOnly ? "reduce-only" : "increase"}`,
+  };
+}
+
+function ActionList({
+  primaryPosition,
+  reduceToTargetUsd,
+  collateralToTargetUsd,
+  targetExposureMultiple,
+}: {
+  primaryPosition: PacificaPosition | null;
+  reduceToTargetUsd: number;
+  collateralToTargetUsd: number;
+  targetExposureMultiple: number;
+}) {
+  const symbol = primaryPosition?.symbol || "current position";
+  const actions = primaryPosition
+    ? [
+        `Do not add new leverage until ${symbol} risk improves.`,
+        reduceToTargetUsd > 0
+          ? `Reduce about ${formatUsd(reduceToTargetUsd)} of ${symbol} exposure to move below ${targetExposureMultiple}x equity.`
+          : `Keep exposure below ${targetExposureMultiple}x equity before opening new positions.`,
+        collateralToTargetUsd > 0
+          ? `Adding about ${formatUsd(collateralToTargetUsd)} collateral would also bring exposure back under ${targetExposureMultiple}x.`
+          : "Collateral is enough for the current target exposure band.",
+        "Keep a reduce-only exit active before making any fresh directional trade.",
+      ]
+    : [
+        "No live position is open for this account.",
+        "Use the market context below before taking a new position.",
+        "Keep first entries small until the account builds more equity history.",
+      ];
 
   return (
-    <div className="grid gap-4">
-      <article className="rounded-[24px] border border-[#1f304f] bg-[#0d1730] p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7dd3fc]/80">
-              Focus market
-            </div>
-            <div className="mt-3 flex items-center gap-3">
-              <div className="text-[34px] font-semibold leading-none tracking-[-0.05em] text-white">
-                {market.symbol}
-              </div>
-              <StatusPill>{market.maxLeverage}x max leverage</StatusPill>
-            </div>
+    <div className="grid gap-3">
+      {actions.map((action, index) => (
+        <div
+          key={action}
+          className="flex gap-3 rounded-[20px] border border-white/10 bg-[#101827] p-4"
+        >
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-300 text-sm font-semibold text-[#07111f]">
+            {index + 1}
           </div>
-          <div
-            className={cn(
-              "rounded-full px-3 py-1 text-sm font-medium",
-              market.change24hPct >= 0
-                ? "bg-emerald-500/10 text-emerald-300"
-                : "bg-rose-500/10 text-rose-300",
-            )}
-          >
-            {formatPct(market.change24hPct)}
-          </div>
+          <div className="text-sm leading-7 text-slate-200">{action}</div>
         </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Mark / Oracle / Mid
-            </div>
-            <div className="mt-2 text-lg font-semibold text-white">
-              {market.mark >= 100 ? formatUsd(market.mark) : market.mark.toFixed(4)}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">
-              {market.oracle >= 100 ? market.oracle.toFixed(2) : market.oracle.toFixed(4)} /{" "}
-              {market.mid >= 100 ? market.mid.toFixed(2) : market.mid.toFixed(4)}
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Funding / Min order
-            </div>
-            <div className="mt-2 text-lg font-semibold text-white">
-              {formatFundingRate(market.nextFundingRate)}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">
-              Min size {formatUsd(market.minOrderSizeUsd)} · Tick {market.tickSize}
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Open interest
-            </div>
-            <div className="mt-2 text-lg font-semibold text-white">
-              {compactNumberFormatter.format(market.openInterest)}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">
-              24h volume {formatCompactUsd(market.volume24h)}
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Safe action
-            </div>
-            <div className="mt-2 text-lg font-semibold text-white">
-              {safePlan ? ACTION_LABELS[safePlan.action] : "Review"}
-            </div>
-            <div className="mt-2 text-sm text-slate-400">
-              {safePlan
-                ? `${safePlan.leverageCap}x cap · ${formatUsd(safePlan.sizeCapUsd)} size`
-                : "No symbol-specific plan available"}
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article className="rounded-[24px] border border-white/10 bg-[#10182c] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-              Funding curve
-            </div>
-            <div className="mt-2 text-base font-semibold text-white">
-              {funding ? funding.symbol : market.symbol} carry context
-            </div>
-          </div>
-          {funding ? (
-            <StatusPill tone="soft">{funding.regime}</StatusPill>
-          ) : null}
-        </div>
-        <div className="mt-4 rounded-[20px] border border-white/10 bg-[#0a1020] px-3 py-4">
-          <Sparkline values={values} stroke="#38bdf8" />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[18px] border border-white/10 bg-[#0a1020] px-4 py-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Carry per $1k
-            </div>
-            <div className="mt-2 text-sm font-semibold text-white">
-              {funding ? formatUsd(funding.hourlyCarryFor1kUsd, 2) : "n/a"}
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-white/10 bg-[#0a1020] px-4 py-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Impact spread
-            </div>
-            <div className="mt-2 text-sm font-semibold text-white">
-              {funding ? `${funding.impactSpreadPct.toFixed(3)}%` : "n/a"}
-            </div>
-          </div>
-        </div>
-      </article>
+      ))}
     </div>
   );
 }
 
-function FundingCard({ curve }: { curve: PacificaFundingCurve }) {
+function PositionRiskCard({
+  position,
+  equityUsd,
+  accountMarginUsd,
+  exposureMultiple,
+}: {
+  position: PacificaPosition | null;
+  equityUsd: number;
+  accountMarginUsd: number;
+  exposureMultiple: number;
+}) {
+  if (!position) {
+    return (
+      <div className="rounded-[24px] border border-white/10 bg-[#101827] p-5 text-sm leading-7 text-slate-400">
+        No open Pacifica position was returned for this account. The health score will focus on
+        available equity and market context until a position exists.
+      </div>
+    );
+  }
+
+  const sideLabel = positionSideLabel(position.side);
+  const liquidationBuffer = position.liquidationDistancePct ?? 0;
+
+  return (
+    <article className="rounded-[28px] border border-white/10 bg-[#101827] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-slate-500">
+            Main risk driver
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h3 className="text-[34px] font-semibold leading-none tracking-[-0.06em] text-white">
+              {position.symbol} {sideLabel}
+            </h3>
+            <StatusPill tone="risk">
+              {liquidationBuffer ? `${liquidationBuffer.toFixed(1)}% liq buffer` : "No liq price"}
+            </StatusPill>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm text-slate-500">Exposure / equity</div>
+          <div className="mt-1 text-[32px] font-semibold tracking-[-0.05em] text-rose-100">
+            {exposureMultiple.toFixed(1)}x
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatTile
+          label="Account equity"
+          value={formatUsd(equityUsd, 1)}
+          detail="Live account equity from Pacifica"
+          tone="good"
+        />
+        <StatTile
+          label="Position exposure"
+          value={formatCompactUsd(position.notionalUsd)}
+          detail={`${position.amount} ${position.symbol} at mark`}
+          tone={exposureMultiple >= 10 ? "danger" : "warn"}
+        />
+        <StatTile
+          label="Liquidation price"
+          value={position.liquidationPrice ? formatPrice(position.liquidationPrice) : "n/a"}
+          detail={`Mark now ${formatPrice(position.markPrice)}`}
+          tone={liquidationBuffer < 8 ? "danger" : "warn"}
+        />
+        <StatTile
+          label="Margin used"
+          value={formatUsd(accountMarginUsd, 1)}
+          detail="Total margin used by the account"
+          tone="warn"
+        />
+      </div>
+
+      <div className="mt-5 rounded-[22px] border border-white/10 bg-black/20 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-white">Liquidation buffer</div>
+            <div className="mt-1 text-sm text-slate-400">
+              Below 8% is treated as high risk for new leverage.
+            </div>
+          </div>
+          <div className="font-mono text-sm text-slate-300">
+            {position.liquidationDistancePct === null
+              ? "n/a"
+              : `${position.liquidationDistancePct.toFixed(2)}%`}
+          </div>
+        </div>
+        <div className="mt-4">
+          <ProgressBar value={liquidationBuffer} dangerAt={12} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MarketRow({
+  market,
+  isFocused,
+  onFocus,
+}: {
+  market: PacificaRiskRoomResponse["marketSnapshot"][number];
+  isFocused: boolean;
+  onFocus: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onFocus}
+      className={cn(
+        "w-full rounded-[20px] border p-4 text-left transition",
+        isFocused
+          ? "border-cyan-300/30 bg-cyan-300/10"
+          : "border-white/10 bg-[#101827] hover:border-white/20",
+      )}
+    >
+      <div className="grid gap-3 md:grid-cols-[1fr_repeat(4,minmax(0,0.8fr))] md:items-center">
+        <div>
+          <div className="text-lg font-semibold text-white">{market.symbol}</div>
+          <div className="mt-1 text-sm text-slate-500">{market.maxLeverage}x max leverage</div>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            Mark
+          </div>
+          <div className="mt-1 text-sm font-semibold text-white">{formatPrice(market.mark)}</div>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            24h
+          </div>
+          <div className={cn("mt-1 text-sm font-semibold", market.change24hPct >= 0 ? "text-emerald-300" : "text-rose-300")}>
+            {formatPct(market.change24hPct)}
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            Funding
+          </div>
+          <div className="mt-1 text-sm font-semibold text-white">
+            {formatFundingRate(market.nextFundingRate)}
+          </div>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            Volume
+          </div>
+          <div className="mt-1 text-sm font-semibold text-white">
+            {formatCompactUsd(market.volume24h)}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function FundingCard({
+  curve,
+  activeNotional,
+}: {
+  curve: PacificaFundingCurve;
+  activeNotional: number;
+}) {
   const values = curve.points
     .slice()
     .reverse()
-    .map((item) => item.nextFundingRate * 10000);
-  const tone =
-    curve.regime === "longs-pay"
-      ? "text-amber-300 border-amber-500/20 bg-amber-500/5"
-      : curve.regime === "shorts-pay"
-        ? "text-emerald-300 border-emerald-500/20 bg-emerald-500/5"
-        : "text-cyan-300 border-cyan-500/20 bg-cyan-500/5";
+    .map((point) => point.nextFundingRate * 10000);
+  const nextCost = Math.abs(activeNotional * curve.nextFundingRate);
 
   return (
-    <article className="rounded-[22px] border border-white/10 bg-[#10182c] p-4">
+    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
             {curve.symbol}
           </div>
-          <div className="mt-2 text-[28px] font-semibold leading-none tracking-[-0.04em] text-white">
+          <div className="mt-2 text-[28px] font-semibold leading-none tracking-[-0.05em] text-white">
             {formatFundingRate(curve.nextFundingRate)}
           </div>
         </div>
-        <div className={cn("rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]", tone)}>
-          {curve.regime}
-        </div>
+        <StatusPill tone="soft">{curve.regime}</StatusPill>
       </div>
-      <div className="mt-3 text-sm text-slate-400">
-        Carry on $1k notional: {formatUsd(curve.hourlyCarryFor1kUsd, 2)}
-      </div>
-      <div className="mt-4 rounded-[18px] border border-white/10 bg-[#0a1020] px-3 py-3">
+      <div className="mt-4 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
         <Sparkline values={values} stroke="#22d3ee" />
       </div>
-      <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
-        <span>Impact spread {curve.impactSpreadPct.toFixed(3)}%</span>
-        <span>{curve.points.length} prints</span>
-      </div>
-    </article>
-  );
-}
-
-function RiskSignalCard({
-  signal,
-}: {
-  signal: PacificaRiskRoomResponse["riskSummary"]["signals"][number];
-}) {
-  return (
-    <article className="rounded-[20px] border border-white/10 bg-[#10182c] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-white">{signal.title}</div>
-        <div
-          className={cn(
-            "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]",
-            RISK_TONES[signal.tone].badge,
-          )}
-        >
-          {signal.tone}
-        </div>
-      </div>
-      <div className="mt-3 text-[30px] font-semibold leading-none tracking-[-0.05em] text-white">
-        {signal.value}
-      </div>
-      <div className="mt-2 text-sm leading-6 text-slate-400">{signal.detail}</div>
-    </article>
-  );
-}
-
-function SafeOrderCard({
-  plan,
-}: {
-  plan: PacificaRiskRoomResponse["riskSummary"]["safeOrderPlan"][number];
-}) {
-  return (
-    <article className="rounded-[22px] border border-white/10 bg-[#10182c] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-            {plan.symbol}
-          </div>
-          <div className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.04em] text-white">
-            {ACTION_LABELS[plan.action]}
-          </div>
-        </div>
-        <StatusPill tone="soft">{plan.orderType}</StatusPill>
-      </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3">
+        <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-            Leverage cap
+            Cost on current position
           </div>
-          <div className="mt-2 text-lg font-semibold text-white">{plan.leverageCap}x</div>
-        </div>
-        <div className="rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-            Size cap
-          </div>
-          <div className="mt-2 text-lg font-semibold text-white">
-            {formatUsd(plan.sizeCapUsd)}
+          <div className="mt-2 text-sm font-semibold text-white">
+            {activeNotional ? formatUsd(nextCost, 4) : "n/a"}
           </div>
         </div>
-      </div>
-      <div className="mt-4 text-sm leading-6 text-slate-400">{plan.rationale}</div>
-      <div className="mt-3 rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm leading-6 text-slate-300">
-        {plan.invalidation}
+        <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            Cost per $1k
+          </div>
+          <div className="mt-2 text-sm font-semibold text-white">
+            {formatUsd(curve.hourlyCarryFor1kUsd, 4)}
+          </div>
+        </div>
       </div>
     </article>
   );
-}
-
-type ActivityItem =
-  | {
-      kind: "order";
-      timestamp: number | null;
-      title: string;
-      detail: string;
-      tone: string;
-    }
-  | {
-      kind: "fill";
-      timestamp: number | null;
-      title: string;
-      detail: string;
-      tone: string;
-    }
-  | {
-      kind: "close";
-      timestamp: number | null;
-      title: string;
-      detail: string;
-      tone: string;
-    };
-
-function buildOrderActivity(order: PacificaOrder): ActivityItem {
-  return {
-    kind: "order",
-    timestamp: order.createdAt,
-    title: `${order.symbol} ${order.orderType}`,
-    detail: `${order.side} · Amount ${order.amount} · ${order.reduceOnly ? "Reduce-only" : "Increase"}`,
-    tone: "bg-cyan-400",
-  };
-}
-
-function buildTradeActivity(trade: PacificaTradeHistoryItem): ActivityItem {
-  return {
-    kind: "fill",
-    timestamp: trade.createdAt,
-    title: `${trade.symbol} ${trade.side}`,
-    detail: `${trade.eventType} · ${trade.cause} · ${formatUsd(trade.notionalUsd, 2)}`,
-    tone: "bg-emerald-400",
-  };
-}
-
-function buildPositionCloseActivity(item: PacificaPositionHistoryItem): ActivityItem {
-  return {
-    kind: "close",
-    timestamp: item.closedAt,
-    title: `${item.symbol} ${item.side}`,
-    detail: `Closed at ${item.exitPrice} · Realized ${formatUsd(item.realizedPnlUsd, 2)}`,
-    tone: "bg-amber-400",
-  };
 }
 
 export default function PacificaRiskRoomPage() {
@@ -643,7 +655,7 @@ export default function PacificaRiskRoomPage() {
         const nextPayload = (await response.json()) as PacificaRiskRoomResponse;
 
         if (!response.ok || !nextPayload.success) {
-          throw new Error("Failed to load Pacifica Risk Room payload");
+          throw new Error("Failed to load Pacifica account health data");
         }
 
         if (cancelled) {
@@ -656,7 +668,7 @@ export default function PacificaRiskRoomPage() {
           !activeFocusSymbol ||
           !nextPayload.marketSnapshot.some((item) => item.symbol === activeFocusSymbol)
         ) {
-          setFocusSymbol(nextPayload.marketSnapshot[0]?.symbol || "");
+          setFocusSymbol(nextPayload.account.positions[0]?.symbol || nextPayload.marketSnapshot[0]?.symbol || "");
         }
       } catch (loadError) {
         if (cancelled) {
@@ -666,7 +678,7 @@ export default function PacificaRiskRoomPage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Failed to load Pacifica Risk Room payload",
+            : "Failed to load Pacifica account health data",
         );
       } finally {
         if (!cancelled) {
@@ -685,82 +697,111 @@ export default function PacificaRiskRoomPage() {
     };
   }, [submittedAccount, refreshNonce]);
 
-  const focusMarket =
-    payload?.marketSnapshot.find((item) => item.symbol === focusSymbol) || null;
-  const focusFunding =
-    payload?.fundingCurves.find((item) => item.symbol === focusSymbol) || null;
-  const focusPlan =
-    payload?.riskSummary.safeOrderPlan.find((item) => item.symbol === focusSymbol) ||
-    payload?.riskSummary.safeOrderPlan[0] ||
-    null;
   const riskSummary = payload?.riskSummary || null;
   const riskTone = riskSummary ? RISK_TONES[riskSummary.status] : RISK_TONES.watch;
   const RiskIcon = riskTone.icon;
+  const primaryPosition = payload?.account.positions[0] || null;
   const grossExposure = payload
     ? payload.account.positions.reduce((sum, item) => sum + item.notionalUsd, 0)
     : 0;
-  const totalFundingPressure = payload
-    ? payload.fundingCurves.reduce(
-        (sum, item) => sum + Math.abs(item.nextFundingRate),
-        0,
-      )
-    : 0;
-  const portfolioSeries =
-    payload?.account.portfolioHistory.map((item) => item.equityUsd) || [];
+  const equityUsd = payload?.account.equityUsd || 0;
+  const exposureMultiple = equityUsd > 0 ? grossExposure / equityUsd : 0;
+  const targetExposureMultiple = riskSummary?.status === "critical" ? 8 : 10;
+  const reduceToTargetUsd = Math.max(0, grossExposure - equityUsd * targetExposureMultiple);
+  const collateralToTargetUsd =
+    targetExposureMultiple > 0
+      ? Math.max(0, grossExposure / targetExposureMultiple - equityUsd)
+      : 0;
+  const focusMarket =
+    payload?.marketSnapshot.find((item) => item.symbol === focusSymbol) || null;
+  const primaryFunding =
+    payload?.fundingCurves.find((item) => item.symbol === primaryPosition?.symbol) ||
+    payload?.fundingCurves.find((item) => item.symbol === focusSymbol) ||
+    null;
+  const portfolioSeries = payload?.account.portfolioHistory.map((item) => item.equityUsd) || [];
   const activityItems = payload
     ? [
-        ...payload.account.openOrders.slice(0, 4).map(buildOrderActivity),
-        ...payload.account.tradeHistory.slice(0, 4).map(buildTradeActivity),
-        ...payload.account.positionHistory.slice(0, 4).map(buildPositionCloseActivity),
+        ...payload.account.openOrders.slice(0, 3).map(buildOrderActivity),
+        ...payload.account.tradeHistory.slice(0, 6).map(buildTradeActivity),
       ]
         .sort((left, right) => (right.timestamp || 0) - (left.timestamp || 0))
-        .slice(0, 8)
+        .slice(0, 6)
     : [];
 
   return (
-    <main className="min-h-screen bg-[#050816] text-slate-100">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.12),_transparent_22%),radial-gradient(circle_at_top_right,_rgba(14,165,233,0.08),_transparent_20%),linear-gradient(180deg,_#050816_0%,_#07101f_100%)]" />
+    <main className="min-h-screen overflow-hidden bg-[#05070d] text-slate-100">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_8%,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_92%_12%,rgba(244,63,94,0.12),transparent_22%),linear-gradient(135deg,#05070d_0%,#08111f_52%,#060914_100%)]" />
+      <div className="fixed inset-0 -z-10 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,.3)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.3)_1px,transparent_1px)] [background-size:48px_48px]" />
 
-      <div className="mx-auto max-w-[1680px] px-4 py-4 md:px-6">
-        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="rounded-[30px] border border-white/10 bg-[#0a0f1b] p-4 shadow-[0_28px_90px_rgba(3,8,20,0.42)]">
-            <div className="flex items-center gap-3 rounded-[20px] border border-[#1f304f] bg-[#0d1730] px-4 py-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-300">
-                <Radar className="h-5 w-5" />
+      <div className="mx-auto max-w-[1540px] px-4 py-4 md:px-6">
+        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="rounded-[32px] border border-white/10 bg-[#0a0f1c]/95 p-4 shadow-[0_28px_120px_rgba(2,6,23,0.45)] xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)]">
+            <div className="rounded-[24px] border border-cyan-300/15 bg-cyan-300/10 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-[#06111d]">
+                  <Radar className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-base font-semibold text-white">Pacifica Account Health</div>
+                  <div className="text-sm text-cyan-100/70">Risk before leverage</div>
+                </div>
               </div>
-              <div>
-                <div className="text-base font-semibold text-white">Pacifica Risk Room</div>
-                <div className="text-sm text-slate-400">Perps risk console</div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <StatusPill>Market {payload ? SOURCE_LABELS[payload.sourceStatus.market] : "..."}</StatusPill>
+                <StatusPill tone="soft">
+                  Account {payload ? SOURCE_LABELS[payload.sourceStatus.account] : "..."}
+                </StatusPill>
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              <StatusPill>Market {payload ? SOURCE_LABELS[payload.sourceStatus.market] : "..."}</StatusPill>
-              <StatusPill tone="soft">
-                Account {payload ? SOURCE_LABELS[payload.sourceStatus.account] : "..."}
-              </StatusPill>
+            <div className="mt-4">
+              <NavRail />
             </div>
 
-            <div className="mt-5">
-              <SidebarNav />
-            </div>
-
-            <div
-              className={cn(
-                "mt-5 rounded-[24px] border border-white/10 bg-[#10182c] p-4",
-                riskTone.glow,
-              )}
+            <form
+              className="mt-5 space-y-3 rounded-[24px] border border-white/10 bg-[#101827] p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setSubmittedAccount(accountInput.trim());
+              }}
             >
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                Pacifica wallet
+              </div>
+              <input
+                value={accountInput}
+                onChange={(event) => setAccountInput(event.target.value)}
+                placeholder="Wallet or subaccount address"
+                className="w-full rounded-[18px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/50"
+              />
+              <button
+                type="submit"
+                className="w-full rounded-[16px] bg-cyan-300 px-4 py-3 text-sm font-semibold text-[#06111d] transition hover:bg-cyan-200"
+              >
+                Check health
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountInput("");
+                  setSubmittedAccount("");
+                }}
+                className="w-full rounded-[16px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+              >
+                Use sample mode
+              </button>
+            </form>
+
+            <div className={cn("mt-5 rounded-[24px] border bg-[#101827] p-4", riskTone.border, riskTone.glow)}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                    Risk verdict
+                    Health score
                   </div>
-                  <div className="mt-2 flex items-center gap-2 text-white">
+                  <div className={cn("mt-2 flex items-center gap-2 text-sm font-semibold", riskTone.text)}>
                     <RiskIcon className="h-4 w-4" />
-                    <span className="text-sm font-semibold uppercase tracking-[0.18em]">
-                      {riskSummary?.status || "watch"}
-                    </span>
+                    {riskTone.label}
                   </div>
                 </div>
                 <button
@@ -768,557 +809,296 @@ export default function PacificaRiskRoomPage() {
                   onClick={() => setRefreshNonce((value) => value + 1)}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300 transition hover:bg-white/[0.08]"
                 >
-                  {isRefreshing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCcw className="h-4 w-4" />
-                  )}
+                  {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                   Refresh
                 </button>
               </div>
-
-              <div className="mt-4 flex items-end justify-between gap-3">
-                <div>
-                  <div className={cn("text-[42px] font-semibold leading-none tracking-[-0.06em]", riskTone.number)}>
-                    {riskSummary ? riskSummary.score : "--"}
-                  </div>
-                  <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                    score / 100
-                  </div>
-                </div>
-                <div className="h-14 w-1 rounded-full bg-white/5">
-                  <div
-                    className={cn("w-full rounded-full", riskTone.line)}
-                    style={{ height: `${Math.max(riskSummary?.score || 0, 14)}%` }}
-                  />
-                </div>
+              <div className="mt-4 text-[52px] font-semibold leading-none tracking-[-0.07em] text-white">
+                {riskSummary ? riskSummary.score : "--"}
               </div>
-
-              <div className="mt-4 rounded-[18px] border border-white/10 bg-[#0a1020] px-4 py-4 text-sm leading-6 text-slate-300">
-                {riskSummary?.verdict || "Loading current Pacifica posture..."}
+              <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                out of 100
               </div>
             </div>
 
-            <form
-              className="mt-5 space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setSubmittedAccount(accountInput.trim());
-              }}
-            >
-              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                Review account
-              </div>
-              <input
-                value={accountInput}
-                onChange={(event) => setAccountInput(event.target.value)}
-                placeholder="Pacifica wallet or subaccount address"
-                className="w-full rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
-              />
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <button
-                  type="submit"
-                  className="rounded-[16px] bg-cyan-400 px-4 py-3 text-sm font-semibold text-[#06111d] transition hover:bg-cyan-300"
-                >
-                  Review account
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccountInput("");
-                    setSubmittedAccount("");
-                  }}
-                  className="rounded-[16px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
-                >
-                  Use sample mode
-                </button>
-              </div>
-            </form>
-
             {!compactMode ? (
-              <div className="mt-5 space-y-3">
-                <Link
-                  href="https://docs.pacifica.fi/api-documentation/api"
-                  className="flex items-center justify-between rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-3 text-sm text-slate-300 transition hover:bg-white/[0.05]"
-                >
-                  <span className="flex items-center gap-3">
-                    <BookOpen className="h-4 w-4" />
-                    Pacifica docs
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="https://github.com/richard7463/pacifica-risk-room"
-                  className="flex items-center justify-between rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-3 text-sm text-slate-300 transition hover:bg-white/[0.05]"
-                >
-                  <span className="flex items-center gap-3">
-                    <Github className="h-4 w-4" />
-                    Source repo
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-              </div>
+              <Link
+                href="https://docs.pacifica.fi/api-documentation/api"
+                className="mt-5 flex items-center justify-between rounded-[18px] border border-white/10 bg-[#101827] px-4 py-3 text-sm text-slate-300 transition hover:bg-white/[0.05]"
+              >
+                <span className="flex items-center gap-3">
+                  <BookOpen className="h-4 w-4" />
+                  Pacifica API docs
+                </span>
+                <ExternalLink className="h-4 w-4" />
+              </Link>
             ) : null}
           </aside>
 
           <div className="space-y-4">
             <section
-              id="overview"
-              className="rounded-[30px] border border-white/10 bg-[#0a0f1b] p-5 shadow-[0_28px_90px_rgba(3,8,20,0.42)] md:p-6"
+              id="health"
+              className={cn(
+                "rounded-[34px] border bg-[#0a0f1c]/95 p-5 shadow-[0_30px_140px_rgba(2,6,23,0.45)] md:p-7",
+                riskTone.border,
+              )}
             >
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="grid gap-6 2xl:grid-cols-[1.2fr,0.8fr]">
                 <div>
-                  <div className="font-mono text-[11px] uppercase tracking-[0.26em] text-slate-500">
-                    Pacifica-native risk workspace
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill>Analytics & risk dashboard</StatusPill>
+                    <StatusPill tone="soft">
+                      {payload ? `Updated ${new Date(payload.generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "Loading"}
+                    </StatusPill>
                   </div>
-                  <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.05em] text-white md:text-[42px]">
-                    Real-time risk workspace for Pacifica perpetuals.
+                  <h1 className="mt-5 max-w-4xl text-[40px] font-semibold leading-[0.95] tracking-[-0.07em] text-white md:text-[64px]">
+                    Know your Pacifica liquidation risk before adding leverage.
                   </h1>
-                  <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400 md:text-base">
-                    Pacifica Risk Room is structured like a trading workspace: watchlist,
-                    focused market detail, pressure tape, carry board, account state, and
-                    execution brief in one shell.
+                  <p className="mt-5 max-w-3xl text-base leading-8 text-slate-300">
+                    A live account health monitor that turns Pacifica equity, position exposure,
+                    liquidation distance, funding, and recent activity into one clear safety decision.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill>Watchlist {payload?.watchlistSymbols.join(", ") || "Loading"}</StatusPill>
-                  <StatusPill tone="soft">
-                    Updated{" "}
-                    {payload
-                      ? new Date(payload.generatedAt).toLocaleTimeString("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : "..."}
-                  </StatusPill>
-                </div>
-              </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <MetricCard
-                  label="Risk score"
-                  value={riskSummary ? `${riskSummary.score}/100` : "--"}
-                  detail={riskSummary?.summary || "Reading book posture..."}
-                  accent={
-                    riskSummary?.status === "critical"
-                      ? "rose"
-                      : riskSummary?.status === "stable"
-                        ? "emerald"
-                        : "amber"
-                  }
-                />
-                <MetricCard
-                  label="Gross exposure"
-                  value={payload ? formatCompactUsd(grossExposure) : "--"}
-                  detail={`Account ${payload ? SOURCE_LABELS[payload.sourceStatus.account] : "..."}`}
-                />
-                <MetricCard
-                  label="Funding pressure"
-                  value={payload ? formatFundingRate(totalFundingPressure) : "--"}
-                  detail="Absolute next funding across the carry board."
-                  accent="amber"
-                />
-                <MetricCard
-                  label="Desk equity"
-                  value={payload ? formatCompactUsd(payload.account.equityUsd) : "--"}
-                  detail={`Available ${payload ? formatCompactUsd(payload.account.availableToSpendUsd) : "--"}`}
-                  accent="emerald"
-                />
-                <MetricCard
-                  label="Tracked markets"
-                  value={payload ? String(payload.marketSnapshot.length) : "--"}
-                  detail="Default watchlist seeded for Pacifica perps."
-                />
+                <div className="rounded-[28px] border border-white/10 bg-[#101827] p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                        Current decision
+                      </div>
+                      <div className={cn("mt-3 flex items-center gap-2 text-xl font-semibold", riskTone.text)}>
+                        <RiskIcon className="h-5 w-5" />
+                        {riskTone.label}
+                      </div>
+                    </div>
+                    <StatusPill tone={riskSummary?.status === "critical" ? "risk" : "soft"}>
+                      {riskSummary ? `${riskSummary.score}/100` : "--"}
+                    </StatusPill>
+                  </div>
+                  <div className="mt-5 rounded-[22px] border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200">
+                    {riskSummary?.verdict || "Loading current Pacifica account state..."}
+                  </div>
+                  <div className="mt-4 text-sm leading-6 text-slate-500">
+                    Account: {payload ? shortAddress(payload.account.accountId) : shortAddress(DEFAULT_LIVE_PACIFICA_ACCOUNT)}
+                  </div>
+                </div>
               </div>
 
               {error ? (
-                <div className="mt-4 rounded-[20px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                <div className="mt-5 rounded-[20px] border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
                   {error}
-                </div>
-              ) : null}
-
-              {payload?.notes.length && !compactMode ? (
-                <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                  {payload.notes.map((note) => (
-                    <div
-                      key={note}
-                      className="rounded-[18px] border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100"
-                    >
-                      {note}
-                    </div>
-                  ))}
                 </div>
               ) : null}
             </section>
 
             {isLoading && !payload ? (
-              <div className="flex min-h-[320px] items-center justify-center rounded-[30px] border border-white/10 bg-[#0a0f1b]">
+              <div className="flex min-h-[360px] items-center justify-center rounded-[32px] border border-white/10 bg-[#0a0f1c]/95">
                 <div className="flex items-center gap-3 text-slate-300">
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  Loading Pacifica Risk Room...
+                  Loading Pacifica account health...
                 </div>
               </div>
             ) : null}
 
             {payload ? (
               <>
-                <div className="grid gap-4 2xl:grid-cols-[1.2fr,0.8fr]">
-                  <AppPanel
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <StatTile
+                    label="Account equity"
+                    value={formatUsd(payload.account.equityUsd, 1)}
+                    detail={`Available ${formatUsd(payload.account.availableToSpendUsd, 1)}`}
+                    tone="good"
+                  />
+                  <StatTile
+                    label="Total exposure"
+                    value={formatCompactUsd(grossExposure)}
+                    detail={`${exposureMultiple.toFixed(1)}x account equity`}
+                    tone={exposureMultiple >= 10 ? "danger" : "warn"}
+                  />
+                  <StatTile
+                    label="Open positions"
+                    value={String(payload.account.positions.length)}
+                    detail={primaryPosition ? `${primaryPosition.symbol} is the main risk driver` : "No open position"}
+                  />
+                  <StatTile
+                    label="Funding on position"
+                    value={
+                      primaryPosition && primaryFunding
+                        ? formatUsd(Math.abs(primaryPosition.notionalUsd * primaryFunding.nextFundingRate), 4)
+                        : "n/a"
+                    }
+                    detail={primaryFunding ? `${primaryFunding.symbol} next funding ${formatFundingRate(primaryFunding.nextFundingRate)}` : "No funding curve"}
+                  />
+                </div>
+
+                <div className="grid gap-4 2xl:grid-cols-[1.1fr,0.9fr]">
+                  <Panel
+                    id="position"
+                    eyebrow="Position risk"
+                    title={primaryPosition ? `${primaryPosition.symbol} is driving the health score` : "No live position"}
+                    body="This section explains the account risk in plain language: exposure, liquidation buffer, and account margin."
+                  >
+                    <PositionRiskCard
+                      position={primaryPosition}
+                      equityUsd={payload.account.equityUsd}
+                      accountMarginUsd={payload.account.marginUsedUsd}
+                      exposureMultiple={exposureMultiple}
+                    />
+                  </Panel>
+
+                  <Panel
+                    id="action"
+                    eyebrow="Recommended action"
+                    title="What to do next"
+                    body="The action list is tied to the live account position, not unrelated markets."
+                    action={<StatusPill tone={riskSummary?.status === "critical" ? "risk" : "soft"}>{riskTone.label}</StatusPill>}
+                  >
+                    <ActionList
+                      primaryPosition={primaryPosition}
+                      reduceToTargetUsd={reduceToTargetUsd}
+                      collateralToTargetUsd={collateralToTargetUsd}
+                      targetExposureMultiple={targetExposureMultiple}
+                    />
+                  </Panel>
+                </div>
+
+                <div className="grid gap-4 2xl:grid-cols-[0.9fr,1.1fr]">
+                  <Panel
+                    id="funding"
+                    eyebrow="Funding cost"
+                    title={primaryFunding ? `${primaryFunding.symbol} carry on the live position` : "Funding context"}
+                    body="Funding is shown as a cost on the current account exposure, so it is clear whether carry matters."
+                  >
+                    {primaryFunding ? (
+                      <FundingCard
+                        curve={primaryFunding}
+                        activeNotional={primaryPosition?.notionalUsd || 0}
+                      />
+                    ) : (
+                      <div className="rounded-[24px] border border-white/10 bg-[#101827] p-5 text-sm text-slate-400">
+                        No funding curve was returned for the active position.
+                      </div>
+                    )}
+                  </Panel>
+
+                  <Panel
                     id="markets"
-                    eyebrow="Market board"
-                    title="Watchlist monitor"
-                    body="Dense row cards modeled after real trading workspaces: quick enough to scan, detailed enough to act."
-                    action={<StatusPill tone="soft">Click a row to focus</StatusPill>}
+                    eyebrow="Market context"
+                    title="Use the watchlist as context, not as the main decision"
+                    body="The account health score is driven by the live position. Market data stays available for comparison."
+                    action={<StatusPill tone="soft">{payload.watchlistSymbols.join(", ")}</StatusPill>}
                   >
                     <div className="grid gap-3">
                       {payload.marketSnapshot.map((market) => (
-                        <button
+                        <MarketRow
                           key={market.symbol}
-                          type="button"
-                          onClick={() => setFocusSymbol(market.symbol)}
-                          className={cn(
-                            "w-full rounded-[22px] border p-4 text-left transition",
-                            focusSymbol === market.symbol
-                              ? "border-[#28527c] bg-[#0d1730] shadow-[0_18px_56px_rgba(13,23,48,0.36)]"
-                              : "border-white/10 bg-[#10182c] hover:border-white/20 hover:bg-[#131c31]",
-                          )}
-                        >
-                          <div className="grid gap-4 xl:grid-cols-[1.1fr_repeat(5,minmax(0,1fr))] xl:items-center">
-                            <div>
-                              <div className="flex items-center gap-3">
-                                <div className="text-xl font-semibold text-white">
-                                  {market.symbol}
-                                </div>
-                                <StatusPill tone="soft">
-                                  Crowd {market.crowdedScore.toFixed(1)}
-                                </StatusPill>
-                              </div>
-                              <div className="mt-2 text-sm text-slate-400">
-                                {market.isolatedOnly
-                                  ? "Isolated-only market"
-                                  : `${market.maxLeverage}x leverage ceiling`}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Mark
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {market.mark >= 100
-                                  ? formatUsd(market.mark)
-                                  : market.mark.toFixed(4)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                24h
-                              </div>
-                              <div
-                                className={cn(
-                                  "mt-2 text-sm font-semibold",
-                                  market.change24hPct >= 0
-                                    ? "text-emerald-300"
-                                    : "text-rose-300",
-                                )}
-                              >
-                                {formatPct(market.change24hPct)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Funding
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {formatFundingRate(market.nextFundingRate)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                OI
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {compactNumberFormatter.format(market.openInterest)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Volume
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {formatCompactUsd(market.volume24h)}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
+                          market={market}
+                          isFocused={focusSymbol === market.symbol}
+                          onFocus={() => setFocusSymbol(market.symbol)}
+                        />
                       ))}
                     </div>
-                  </AppPanel>
-
-                  <AppPanel
-                    eyebrow="Focused workspace"
-                    title={focusMarket ? `${focusMarket.symbol} detail` : "Market focus"}
-                    body="Selected symbol, funding curve, and safe action are grouped together like a side workspace."
-                  >
-                    <FocusMarketCard
-                      market={focusMarket}
-                      funding={focusFunding}
-                      safePlan={focusPlan}
-                    />
-                  </AppPanel>
+                  </Panel>
                 </div>
 
-                <div className="grid gap-4 2xl:grid-cols-[0.82fr,1.18fr]">
-                  <AppPanel
-                    id="pressure"
-                    eyebrow="Pressure tape"
-                    title="Liquidations and outsized trade stress"
-                    body="A compact event tape for prints that actually matter to leverage decisions."
+                <div className="grid gap-4 2xl:grid-cols-[1.05fr,0.95fr]">
+                  <Panel
+                    eyebrow="Recent activity"
+                    title="Account fills and open orders"
+                    body="Only real account activity is shown here. Position-history records without close prices are intentionally hidden."
                   >
                     <div className="grid gap-3">
-                      {payload.liquidationRadar.map((item) => (
-                        <article
-                          key={`${item.symbol}-${item.createdAt}-${item.side}`}
-                          className="rounded-[20px] border border-white/10 bg-[#10182c] p-4"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="flex items-start gap-3">
-                              <div className={cn("mt-1 h-10 w-1 rounded-full", RISK_TONES[item.severity].line)} />
+                      {activityItems.length ? (
+                        activityItems.map((item, index) => (
+                          <article
+                            key={`${item.title}-${index}`}
+                            className="rounded-[20px] border border-white/10 bg-[#101827] p-4"
+                          >
+                            <div className="flex items-start justify-between gap-4">
                               <div>
-                                <div className="flex items-center gap-3">
-                                  <div className="font-semibold text-white">{item.symbol}</div>
-                                  <div
-                                    className={cn(
-                                      "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]",
-                                      RISK_TONES[item.severity].badge,
-                                    )}
-                                  >
-                                    {item.cause.replaceAll("_", " ")}
-                                  </div>
-                                </div>
-                                <div className="mt-2 text-sm text-slate-400">
-                                  {item.eventType} · {item.side}
-                                </div>
+                                <div className="text-sm font-semibold text-white">{item.title}</div>
+                                <div className="mt-2 text-sm text-slate-400">{item.detail}</div>
+                              </div>
+                              <div className="shrink-0 text-xs text-slate-500">
+                                {formatTime(item.timestamp)}
                               </div>
                             </div>
-                            <div className="text-sm text-slate-500">{formatTime(item.createdAt)}</div>
-                          </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm text-slate-300">
-                              Price {item.price >= 100 ? formatUsd(item.price) : item.price.toFixed(4)}
-                            </div>
-                            <div className="rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm text-slate-300">
-                              Size {compactNumberFormatter.format(item.amount)}
-                            </div>
-                            <div className="rounded-[16px] border border-white/10 bg-[#0a1020] px-4 py-3 text-sm text-slate-300">
-                              Notional {formatCompactUsd(item.notionalUsd)}
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </AppPanel>
-
-                  <AppPanel
-                    id="carry"
-                    eyebrow="Carry board"
-                    title="Funding leaders"
-                    body="Organized like a watch panel: market, regime, curve, and carry drag per $1k notional."
-                  >
-                    <div className="grid gap-3 xl:grid-cols-2">
-                      {payload.fundingCurves.map((curve) => (
-                        <FundingCard key={curve.symbol} curve={curve} />
-                      ))}
-                    </div>
-                  </AppPanel>
-                </div>
-
-                <div className="grid gap-4 2xl:grid-cols-[1.12fr,0.88fr]">
-                  <AppPanel
-                    id="account"
-                    eyebrow="Account review"
-                    title="Live posture and position inventory"
-                    body="This section behaves like a portfolio page with current exposure first, then activity."
-                  >
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <MetricCard
-                        label="Equity"
-                        value={formatUsd(payload.account.equityUsd)}
-                        detail={`Available ${formatUsd(payload.account.availableToSpendUsd)}`}
-                        accent="emerald"
-                      />
-                      <MetricCard
-                        label="Margin used"
-                        value={formatUsd(payload.account.marginUsedUsd)}
-                        detail={`Mode ${SOURCE_LABELS[payload.account.mode]}`}
-                        accent="amber"
-                      />
-                      <MetricCard
-                        label="30d volume"
-                        value={formatCompactUsd(payload.account.volume30dUsd)}
-                        detail={`${payload.account.tradeCount30d} trades`}
-                      />
-                      <MetricCard
-                        label="Net PnL"
-                        value={formatUsd(
-                          payload.account.realizedPnlUsd + payload.account.unrealizedPnlUsd,
-                        )}
-                        detail={`Realized ${formatUsd(payload.account.realizedPnlUsd, 2)}`}
-                        accent="emerald"
-                      />
-                    </div>
-
-                    <div className="mt-5 grid gap-3">
-                      {payload.account.positions.map((position) => (
-                        <article
-                          key={`${position.symbol}-${position.side}`}
-                          className="rounded-[20px] border border-white/10 bg-[#10182c] p-4"
-                        >
-                          <div className="grid gap-4 xl:grid-cols-[1fr_repeat(5,minmax(0,1fr))] xl:items-center">
-                            <div>
-                              <div className="text-lg font-semibold text-white">
-                                {position.symbol}
-                              </div>
-                              <div className="mt-2 text-sm text-slate-400">
-                                {position.side} · Entry{" "}
-                                {position.entryPrice.toFixed(position.entryPrice >= 100 ? 2 : 4)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Notional
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {formatCompactUsd(position.notionalUsd)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                UPNL
-                              </div>
-                              <div
-                                className={cn(
-                                  "mt-2 text-sm font-semibold",
-                                  position.unrealizedPnlUsd >= 0
-                                    ? "text-emerald-300"
-                                    : "text-rose-300",
-                                )}
-                              >
-                                {formatUsd(position.unrealizedPnlUsd, 2)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Margin
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {formatUsd(position.marginUsedUsd, 2)}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Liq buffer
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {position.liquidationDistancePct === null
-                                  ? "n/a"
-                                  : `${position.liquidationDistancePct.toFixed(2)}%`}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                                Leverage
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-white">
-                                {position.leverage ? `${position.leverage}x` : "n/a"}
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </AppPanel>
-
-                  <AppPanel
-                    eyebrow="Activity + signals"
-                    title="Recent account and risk flow"
-                    body="Modeled after wallet activity panels: a single stream for orders, fills, and closures, with risk signals beside it."
-                  >
-                    <div className="grid gap-4 xl:grid-cols-[1.05fr,0.95fr]">
-                      <div className="space-y-3">
-                        {activityItems.length ? (
-                          activityItems.map((item, index) => (
-                            <article
-                              key={`${item.kind}-${item.title}-${index}`}
-                              className="rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-4"
-                            >
-                              <div className="flex items-start gap-3">
-                                <div className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", item.tone)} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-sm font-semibold text-white">
-                                      {item.title}
-                                    </div>
-                                    <div className="text-xs text-slate-500">
-                                      {formatTime(item.timestamp)}
-                                    </div>
-                                  </div>
-                                  <div className="mt-2 text-sm leading-6 text-slate-400">
-                                    {item.detail}
-                                  </div>
-                                </div>
-                              </div>
-                            </article>
-                          ))
-                        ) : (
-                          <div className="rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-5 text-sm text-slate-400">
-                            No recent activity returned for this account context.
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-3">
-                        {riskSummary?.signals.map((signal) => (
-                          <RiskSignalCard key={signal.title} signal={signal} />
-                        ))}
-
-                        <article className="rounded-[20px] border border-white/10 bg-[#10182c] p-4">
-                          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                            Portfolio replay
-                          </div>
-                          <div className="mt-4 rounded-[18px] border border-white/10 bg-[#0a1020] px-3 py-4">
-                            <Sparkline values={portfolioSeries} stroke="#34d399" />
-                          </div>
-                        </article>
-                      </div>
-                    </div>
-                  </AppPanel>
-                </div>
-
-                <AppPanel
-                  id="plan"
-                  eyebrow="Execution brief"
-                  title="Bounded next actions"
-                  body="Safe plans stay explicit: size cap, leverage cap, invalidation, and rationale. The interface is advisory-first by design."
-                >
-                  <div className="grid gap-3 xl:grid-cols-3">
-                    {payload.riskSummary.safeOrderPlan.map((plan) => (
-                      <SafeOrderCard key={plan.symbol} plan={plan} />
-                    ))}
-                  </div>
-
-                  {!compactMode ? (
-                    <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                      {payload.dataSources.map((source) => (
-                        <div
-                          key={source}
-                          className="rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-3 text-sm text-slate-400"
-                        >
-                          {source}
+                          </article>
+                        ))
+                      ) : (
+                        <div className="rounded-[20px] border border-white/10 bg-[#101827] p-5 text-sm text-slate-400">
+                          No recent fills or open orders were returned.
                         </div>
+                      )}
+                    </div>
+                  </Panel>
+
+                  <Panel
+                    eyebrow="Health signals"
+                    title="Why the score changed"
+                    body="These are the exact inputs behind the account health score."
+                  >
+                    <div className="grid gap-3">
+                      {riskSummary?.signals.map((signal) => (
+                        <article
+                          key={signal.title}
+                          className="rounded-[20px] border border-white/10 bg-[#101827] p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-semibold text-white">{signal.title}</div>
+                            <StatusPill tone={signal.tone === "critical" ? "risk" : "soft"}>
+                              {signal.tone}
+                            </StatusPill>
+                          </div>
+                          <div className="mt-3 text-[28px] font-semibold leading-none tracking-[-0.05em] text-white">
+                            {signal.value}
+                          </div>
+                          <div className="mt-2 text-sm leading-6 text-slate-400">{signal.detail}</div>
+                        </article>
                       ))}
                     </div>
-                  ) : null}
-                </AppPanel>
+                  </Panel>
+                </div>
+
+                <Panel
+                  id="data"
+                  eyebrow="Live data proof"
+                  title="Pacifica data used in this health check"
+                  body="The product uses Pacifica REST data for account state, positions, funding, market prices, and recent trades."
+                >
+                  <div className="grid gap-4 xl:grid-cols-[0.9fr,1.1fr]">
+                    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
+                      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                        Portfolio replay
+                      </div>
+                      <div className="mt-4 rounded-[18px] border border-white/10 bg-black/20 px-3 py-4">
+                        <Sparkline values={portfolioSeries} stroke="#34d399" />
+                      </div>
+                    </article>
+
+                    <article className="rounded-[24px] border border-white/10 bg-[#101827] p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {payload.dataSources.map((source) => (
+                          <StatusPill key={source} tone="soft">
+                            {source.replace("Pacifica REST ", "")}
+                          </StatusPill>
+                        ))}
+                      </div>
+                      {payload.notes.length ? (
+                        <div className="mt-4 space-y-2">
+                          {payload.notes.map((note) => (
+                            <div
+                              key={note}
+                              className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-slate-400"
+                            >
+                              {note}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  </div>
+                </Panel>
               </>
             ) : null}
           </div>

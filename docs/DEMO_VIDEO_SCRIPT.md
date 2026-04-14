@@ -1,45 +1,47 @@
-# Pacifica Risk Room Demo Script
+# Pacifica Account Health Demo Script
 
-## Length
-
-`75-90` seconds
+Target length: 90 to 120 seconds.
 
 ## Goal
 
-Show that Pacifica Risk Room is a Pacifica-native analytics product, not a generic dashboard and not another bot.
+Show that Pacifica Account Health is a Pacifica-native analytics product that helps traders understand account safety before adding leverage.
 
 ## Script
 
-### 1. Open on verdict
+### 1. Open the app
 
-"This is Pacifica Risk Room, a real-time analytics and risk dashboard for Pacifica perpetuals."
+"This is Pacifica Account Health. It is a live risk dashboard for Pacifica perpetuals accounts."
 
-"Instead of starting with charts, it starts with the operator verdict: how much room is left to add leverage, what carry is building, and where liquidation stress is showing up."
+"The product answers one question before a trader adds leverage: is this account safe right now?"
 
-### 2. Show market pulse
+### 2. Show the health decision
 
-"The market pulse board is built from Pacifica market data. For each watched perp, it shows mark, 24-hour move, open interest, volume, leverage ceiling, and a crowding score."
+"The app opens on a live Pacifica wallet. The current decision is High risk because BTC is close to liquidation and total exposure is much larger than account equity."
 
-"This helps an operator see which Pacifica markets are crowded before taking the next trade."
+"Instead of starting with charts, the first screen gives the user the safety decision immediately."
 
-### 3. Show liquidation radar
+### 3. Explain the position driving the risk
 
-"Below that is the liquidation radar. It turns recent Pacifica trade flow into a stress feed, so liquidations and settlement prints are visible immediately instead of getting buried in raw trade history."
+"The main risk driver is the BTC long position. The dashboard shows account equity, BTC exposure, liquidation price, margin used, and liquidation buffer in one place."
 
-### 4. Show funding carry board
+"For this account, exposure is roughly eleven times equity, and the liquidation buffer is below the high-risk threshold."
 
-"On the right is the funding carry board. It converts Pacifica funding history into something more useful: next funding, carry cost per one thousand dollars of notional, and a recent funding curve."
+### 4. Show the recommended action
 
-"This makes crowded carry regimes obvious."
+"The product does not auto-trade. It gives a risk action: do not add new leverage until BTC risk improves."
 
-### 5. Show account replay
+"It also shows how much BTC exposure should be reduced to move back under the target exposure band, or how much collateral would be needed to improve the account."
 
-"When a Pacifica account id is entered, the room loads account equity, positions, open orders, and replay history. If no account is provided, the product falls back to sample account mode so the demo still proves the experience."
+### 5. Show funding and market context
 
-### 6. Show safe order plan
+"Funding and market panels stay available, but they support the account decision instead of overwhelming the user."
 
-"At the bottom is the safe order plan. The point is not auto-trading. The point is giving a bounded next action: wait, probe, reduce, or hedge, with a leverage cap and size cap."
+"The trader can still inspect BTC funding, watchlist prices, volume, and recent activity."
+
+### 6. Show data proof
+
+"The Live Data Proof panel shows the Pacifica REST endpoints used for account state, positions, orders, fills, portfolio history, market prices, trades, and funding."
 
 ### 7. Close
 
-"Pacifica Risk Room fits Analytics and Data because it turns Pacifica-native market and account data into a fast, operator-readable decision surface for perp risk."
+"This fits Analytics & Data because it turns Pacifica-native account and market data into a clear risk dashboard for perps traders."

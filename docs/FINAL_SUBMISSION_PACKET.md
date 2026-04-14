@@ -1,39 +1,38 @@
-# Pacifica Risk Room Final Submission Packet
+# Pacifica Account Health Final Submission Packet
 
 ## Recommended Track
 
 `Analytics & Data`
 
-Why this is the strongest fit:
-
-- the product value is market intelligence, funding analysis, liquidation awareness, and account replay
-- it helps traders make better decisions without requiring automatic execution
-- it maps directly to the hackathon judging language around analytics, dashboards, and data products
+This is the strongest fit because Pacifica's track definition includes market intelligence, PnL tracking, and risk dashboards. Pacifica Account Health is a live risk dashboard that helps traders understand account safety before adding leverage.
 
 ## Project Name
 
-Pacifica Risk Room
+Pacifica Account Health
 
 ## One-Line Pitch
 
-Pacifica Risk Room turns Pacifica perpetuals market and account data into a real-time risk, funding, liquidation, and replay dashboard.
+Pacifica Account Health shows whether a Pacifica perps account is safe to add leverage by combining live account equity, position exposure, liquidation distance, funding, and market context.
 
 ## Short Summary
 
-Pacifica Risk Room is a Pacifica-native analytics surface for perp traders. It combines market pulse, funding carry, liquidation radar, account replay, and a bounded order plan into one judge-ready experience. Instead of forcing users to inspect multiple tabs, it compresses Pacifica market and account data into a fast risk decision.
+Pacifica Account Health is a Pacifica-native account risk monitor for perpetuals traders. It turns raw account, position, funding, trade, and market data into one readable health score and a concrete next action. The product answers the trader's most important question before they increase leverage: is this account safe right now?
 
 ## Detailed Description
 
-Perpetual traders usually have to piece together prices, positions, fills, funding, and liquidation context across multiple views. Pacifica Risk Room turns those fragmented signals into one operator surface built around the real question: is the account safe to add risk right now?
+Perpetual traders often see prices and positions, but still have to reason manually about liquidation distance, exposure versus equity, margin usage, funding, and recent fills. Pacifica Account Health compresses that work into one product surface.
 
-The product aggregates Pacifica market data, trade flow, funding history, and optional account data into a verdict-driven dashboard. It highlights crowded markets, surfaces liquidation stress, estimates near-term funding drag, replays account posture, and proposes a bounded next action such as wait, probe, reduce, or hedge. If a live Pacifica account id is not provided, the experience still works in explicit sample mode, which keeps the demo reliable while preserving live market context.
+The app loads a live Pacifica wallet by default, identifies the position driving account risk, computes exposure/equity, finds the tightest liquidation buffer, estimates funding cost on the active position, and recommends a risk action such as reducing exposure or adding collateral before adding leverage.
+
+For the current live demo account, the app identifies BTC as the main risk driver and explains that exposure is roughly `11x` account equity with a sub-8% liquidation buffer. The product therefore recommends not adding leverage until BTC exposure is reduced or more collateral is added.
 
 ## What Makes It Innovative
 
-- Pacifica-native instead of a generic exchange dashboard
-- combines risk verdict, carry board, liquidation radar, and replay in one route
-- converts raw exchange telemetry into operator-readable decisions
-- remains demo-safe with live market data plus sample account fallback
+- It is Pacifica-native rather than a generic portfolio dashboard.
+- It turns Pacifica REST data into a pre-liquidation account health decision.
+- It identifies the live position driving risk instead of showing all markets equally.
+- It converts risk metrics into concrete user actions.
+- It keeps API data proof available without making the product feel like a technical demo.
 
 ## Pacifica APIs Used
 
@@ -50,42 +49,45 @@ The product aggregates Pacifica market data, trade flow, funding history, and op
 
 ## User Flow
 
-1. Open Pacifica Risk Room.
-2. Review the top-level risk verdict and market pulse.
-3. Inspect liquidation radar and funding carry by market.
-4. Optionally enter a Pacifica account id for live account review.
-5. Review positions, open orders, replay history, and the bounded order plan.
+1. Open Pacifica Account Health.
+2. The live Pacifica wallet loads automatically.
+3. Read the current decision: Healthy, Watch, or High risk.
+4. Inspect the position driving the score.
+5. Review exposure/equity, liquidation buffer, margin used, and funding cost.
+6. Follow the recommended action before adding leverage.
+7. Use Live Data Proof to verify the Pacifica endpoints behind the dashboard.
 
 ## Judging Angle
 
 ### Innovation
 
-The project reframes exchange data as a decision surface rather than a quote board.
+The project reframes Pacifica account telemetry as a pre-liquidation safety product, not a quote board.
 
 ### Technical Execution
 
-It aggregates multiple Pacifica endpoints, computes derived risk metrics, handles fallback states, and renders the result in a single route.
+It aggregates multiple Pacifica REST endpoints, computes derived account-risk metrics, handles live and sample modes, and renders the result in a responsive Next.js app.
 
 ### User Experience
 
-The experience is verdict-first, readable in under a minute, and demo-stable with or without a live account id.
+The first screen answers the user's real question directly: whether the account is safe and what should happen next.
 
 ### Potential Impact
 
-The product helps Pacifica traders reduce avoidable risk before they increase leverage.
+Pacifica traders can reduce avoidable liquidation risk by seeing exposure/equity and liquidation buffer before increasing leverage.
 
 ### Presentation
 
-README, screenshots, demo script, and submission answers are already prepared.
+README, screenshots, demo script, and form-ready answers are included.
 
 ## Demo Flow
 
-1. Open the route and show the top-level risk verdict.
-2. Explain market pulse and crowding.
-3. Show liquidation radar as the stress feed.
-4. Show funding carry board and cost per `$1k` notional.
-5. Enter an account id or explain sample mode.
-6. End on the safe order plan and why this belongs in Analytics & Data.
+1. Open the live app.
+2. Show the account health score and current decision.
+3. Explain the live BTC position as the main risk driver.
+4. Show exposure/equity and liquidation buffer.
+5. Show the recommended action: do not add leverage and reduce BTC exposure or add collateral.
+6. Show funding and market context as supporting data.
+7. End with Live Data Proof and the Analytics & Data track fit.
 
 ## Remaining External Links
 
@@ -106,5 +108,4 @@ README, screenshots, demo script, and submission answers are already prepared.
 
 - record or upload demo video
 - verify the repository and live demo links in the submission form
-- add a live Pacifica account id during demo if available
 - submit under `Analytics & Data`

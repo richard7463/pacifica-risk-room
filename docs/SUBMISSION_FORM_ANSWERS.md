@@ -1,8 +1,8 @@
-# Pacifica Risk Room Submission Answers
+# Pacifica Account Health Submission Answers
 
 ## Project Name
 
-Pacifica Risk Room
+Pacifica Account Health
 
 ## Track
 
@@ -10,24 +10,27 @@ Analytics & Data
 
 ## One-Line Description
 
-Pacifica Risk Room turns Pacifica perpetuals market and account data into a real-time risk, funding, liquidation, and replay dashboard.
+Pacifica Account Health shows whether a Pacifica perps account is safe to add leverage by combining live account equity, position exposure, liquidation distance, funding, and market context.
 
 ## What Problem Does It Solve
 
-Perp traders often have prices, positions, and fills scattered across multiple views, but no single place that answers the actual risk question:
+Perps traders often know their position size, but not whether the whole account is safe. Before adding leverage, they need a fast answer:
 
-- which markets are crowded
-- where liquidation stress is appearing
-- how much funding will cost
-- whether the account has room to add more leverage
+- How large is my exposure compared with account equity?
+- How close is my closest liquidation price?
+- Which position is driving the risk score?
+- Is funding meaningful for my current position?
+- Should I add risk, reduce exposure, or add collateral?
 
-Pacifica Risk Room compresses those answers into one operator surface.
+Pacifica Account Health turns those questions into one live account health dashboard.
 
 ## What Makes It Innovative
 
-- It is Pacifica-native instead of a generic exchange terminal.
-- It combines market pulse, liquidation radar, funding carry, account replay, and bounded order guidance in one route.
-- It stays demo-ready even without a live account by using explicit sample account mode while still pulling live Pacifica market data.
+- It is Pacifica-native rather than a generic perps terminal.
+- It turns raw REST data into a pre-liquidation account health decision.
+- It focuses on the live position driving risk instead of showing every market equally.
+- It converts account data into trader-readable guidance: do not add leverage, reduce exposure, or add collateral.
+- It keeps market and funding data as context while making account health the primary product.
 
 ## Pacifica APIs Used
 
@@ -44,38 +47,34 @@ Pacifica Risk Room compresses those answers into one operator surface.
 
 ## User Flow
 
-1. Open Pacifica Risk Room.
-2. Review the market pulse, liquidation radar, and carry board.
-3. Optionally enter a Pacifica account id for live account review.
-4. Inspect positions, open orders, replay history, and the risk verdict.
-5. Use the safe order plan to decide whether to wait, probe, reduce, or hedge.
+1. Open Pacifica Account Health.
+2. The default live Pacifica wallet loads automatically.
+3. Read the account health score and current decision.
+4. Inspect the position driving the score.
+5. Review exposure/equity, liquidation buffer, and funding cost.
+6. Follow the recommended action before adding leverage.
+7. Check Live Data Proof to verify the Pacifica endpoints used.
 
 ## Why It Fits This Track
 
-The project does not optimize for auto-execution.
-
-It optimizes for:
+The project maps directly to `Analytics & Data` because it provides:
 
 - market intelligence
-- PnL and posture replay
-- funding and liquidation analytics
-- operator-readable decision support
+- PnL and account posture tracking
+- liquidation-risk analytics
+- funding-cost analytics
+- a risk dashboard built from Pacifica-native data
 
-That maps directly to Analytics & Data.
+It does not execute trades automatically. It helps traders make safer decisions before increasing leverage.
 
 ## Short Demo Summary
 
-The demo opens on the risk verdict, then walks through:
-
-- market pulse
-- liquidation radar
-- funding carry board
-- live or sample account replay
-- safe order plan
+The demo opens on a live Pacifica account. The app detects that BTC is the main risk driver, shows exposure at roughly `11x` equity, highlights the liquidation buffer, and recommends not adding leverage until BTC exposure is reduced or collateral is added.
 
 ## Future Expansion
 
-- live WebSocket streaming for push-based updates
-- saved trader profiles and watchlists
-- alerting for funding spikes and liquidation clusters
-- builder-flow handoff for approved order plans
+- push-based WebSocket refresh
+- liquidation and funding alerts
+- saved account watchlists
+- multi-account risk comparison
+- optional order-plan handoff for reduce-only exits

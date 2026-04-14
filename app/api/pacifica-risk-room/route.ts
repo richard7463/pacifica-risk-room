@@ -167,10 +167,16 @@ export async function GET(request: NextRequest) {
 
   let liquidationRadar = buildLiquidationRadar(tradeMap);
   if (!liquidationRadar.length) {
-    liquidationRadar = buildSampleLiquidationRadar(marketSnapshot);
-    notes.push(
-      "No elevated liquidation or outsized trade events were returned for the selected symbols, so the radar includes seeded sample stress events.",
-    );
+    if (marketMode === "sample") {
+      liquidationRadar = buildSampleLiquidationRadar(marketSnapshot);
+      notes.push(
+        "Live market data was unavailable, so sample pressure events are shown with sample market mode.",
+      );
+    } else {
+      notes.push(
+        "No elevated liquidation or outsized trade events were returned for the selected symbols.",
+      );
+    }
   }
 
   let fundingCurves = symbolRequests
@@ -182,7 +188,7 @@ export async function GET(request: NextRequest) {
   if (!fundingCurves.length) {
     fundingCurves = buildSampleFundingCurves(marketSnapshot);
     notes.push(
-      "Funding history was unavailable, so the carry board uses seeded sample curves.",
+      "Funding history was unavailable, so the funding panel uses seeded sample curves.",
     );
   }
 

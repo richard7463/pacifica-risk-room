@@ -863,6 +863,8 @@ export function buildRiskSummary(
     const curve = fundingCurves.find((item) => item.symbol === position.symbol);
     return sum + Math.abs(position.notionalUsd * (curve?.nextFundingRate || 0));
   }, 0);
+  const exposureMultiple = totalNotionalUsd / equityUsd;
+  const largestPosition = account.positions[0] || null;
   const liquidationEventsLastHour = liquidationRadar.filter(
     (item) => Date.now() - item.createdAt <= 60 * 60 * 1000,
   ).length;
@@ -879,34 +881,50 @@ export function buildRiskSummary(
   score -= clamp(totalFundingDragUsd * 0.8, 0, 12);
   score -= clamp(liquidationEventsLastHour * 2.5, 0, 10);
   score -= clamp((crowdingAverage - 55) * 0.15, 0, 6);
+  const forcedCritical =
+    exposureMultiple >= 10 ||
+    (tightestLiqDistancePct !== null && tightestLiqDistancePct < 8);
+  const forcedWatch =
+    exposureMultiple >= 6 ||
+    (tightestLiqDistancePct !== null && tightestLiqDistancePct < 14);
+
+  if (forcedCritical) {
+    score = Math.min(score, 49);
+  } else if (forcedWatch) {
+    score = Math.min(score, 74);
+  }
+
   score = round(clamp(score, 18, 96), 0);
 
-  const status: PacificaRiskStatus =
-    score >= 75 ? "stable" : score >= 55 ? "watch" : "critical";
+  const status: PacificaRiskStatus = forcedCritical
+    ? "critical"
+    : score >= 75
+      ? "stable"
+      : score >= 55
+        ? "watch"
+        : "critical";
 
   const signals: PacificaRiskSignal[] = [
     {
-      title: "Margin usage",
+      title: "Margin used",
       value: `${round(marginUsagePct, 1)}%`,
       tone: toneFromThreshold(marginUsagePct, 40, 58),
       detail: `${round(account.marginUsedUsd)} used against ${round(account.equityUsd)} equity.`,
     },
     {
-      title: "Largest position share",
-      value: `${round(largestPositionSharePct, 1)}%`,
-      tone: toneFromThreshold(largestPositionSharePct, 28, 42),
-      detail: `Largest line consumes ${round(
-        account.positions[0]?.notionalUsd || 0,
-      )} USD of gross exposure.`,
+      title: "Exposure / equity",
+      value: `${round(exposureMultiple, 1)}x`,
+      tone: toneFromThreshold(exposureMultiple, 6, 10),
+      detail: `${round(totalNotionalUsd)} USD exposure against ${round(account.equityUsd)} USD equity.`,
     },
     {
-      title: "Funding drag next hour",
+      title: "Funding next hour",
       value: `$${round(totalFundingDragUsd, 2)}`,
       tone: toneFromThreshold(totalFundingDragUsd, 5, 12),
       detail: "Computed from current notionals multiplied by the latest next funding rates.",
     },
     {
-      title: "Tightest liquidation buffer",
+      title: "Liquidation buffer",
       value:
         tightestLiqDistancePct === null
           ? "n/a"
@@ -926,14 +944,21 @@ export function buildRiskSummary(
     },
   ];
 
-  const marketsForPlan = [...marketSnapshot]
-    .sort((left, right) => right.crowdedScore - left.crowdedScore)
-    .slice(0, 3);
+  const marketsForPlan = account.positions.length
+    ? account.positions
+        .map((position) => marketSnapshot.find((market) => market.symbol === position.symbol))
+        .filter((market): market is PacificaMarketSnapshot => Boolean(market))
+    : [...marketSnapshot]
+        .sort((left, right) => right.crowdedScore - left.crowdedScore)
+        .slice(0, 3);
 
   const safeOrderPlan = marketsForPlan.map((market, index) => {
+    const position = account.positions.find((item) => item.symbol === market.symbol);
     const fundingBias = market.nextFundingRate;
     const action: PacificaPlanAction =
-      fundingBias > 0.00001
+      status === "critical" && position
+        ? "reduce"
+        : fundingBias > 0.00001
         ? "reduce"
         : fundingBias < -0.00001
           ? "probe"
@@ -944,10 +969,14 @@ export function buildRiskSummary(
       2,
       Math.min(market.maxLeverage, Math.round(market.maxLeverage * 0.35)),
     );
-    const sizeCapUsd = round(
-      Math.max(250, Math.min(account.availableToSpendUsd * 0.16, equityUsd * 0.12)),
-      0,
-    );
+    const targetExposureUsd = equityUsd * (status === "critical" ? 8 : 10);
+    const reduceSizeUsd = Math.max(0, totalNotionalUsd - targetExposureUsd);
+    const sizeCapUsd = position
+      ? round(Math.max(market.minOrderSizeUsd, reduceSizeUsd || position.notionalUsd * 0.25), 0)
+      : round(
+          Math.max(250, Math.min(account.availableToSpendUsd * 0.16, equityUsd * 0.12)),
+          0,
+        );
 
     return {
       symbol: market.symbol,
@@ -956,21 +985,23 @@ export function buildRiskSummary(
       sizeCapUsd,
       orderType:
         action === "wait"
-          ? "resting limit ladder"
+          ? "hold leverage"
           : action === "reduce"
-            ? "reduce-only take-profit + maker re-entry"
+            ? "reduce-only market or limit"
             : action === "hedge"
               ? "paired limit hedge"
               : "probe-size passive limit",
       invalidation:
         action === "wait"
-          ? `Skip if funding stays above ${(market.nextFundingRate * 100).toFixed(4)}%.`
+          ? `Skip fresh entries until exposure falls below ${status === "critical" ? "8x" : "10x"} equity.`
           : action === "reduce"
-            ? `Stop adding if crowded score remains above ${market.crowdedScore}.`
+            ? `Target exposure below ${status === "critical" ? "8x" : "10x"} equity before adding leverage.`
             : `Cut the probe if mark moves 1.2% against entry.`,
       rationale:
-        action === "reduce"
-          ? "Positive next funding and heavy crowding argue for less aggressive gross exposure."
+        action === "reduce" && position
+          ? `${position.symbol} drives the live account risk. Reducing this line improves liquidation buffer and exposure multiple.`
+          : action === "reduce"
+            ? "Positive next funding and heavy crowding argue for less aggressive gross exposure."
           : action === "probe"
             ? "Negative carry now rewards patient probe entries over full-size commitment."
             : action === "hedge"
@@ -981,15 +1012,19 @@ export function buildRiskSummary(
 
   const verdict =
     status === "stable"
-      ? "Room is tradeable, but only with capped leverage and visible exits."
+      ? "Account is healthy enough for small entries, but keep exits visible before adding leverage."
       : status === "watch"
-        ? "Risk is acceptable for probe-size entries, not for aggressive leverage expansion."
-        : "Current posture is too stressed for fresh directional adds without de-risking first.";
+        ? "Account is usable, but new leverage should stay small until exposure and liquidation buffer improve."
+        : largestPosition
+          ? `High risk: ${largestPosition.symbol} is ${
+              tightestLiqDistancePct === null ? "near" : `${round(tightestLiqDistancePct, 1)}% from`
+            } liquidation and exposure is ${round(exposureMultiple, 1)}x equity. Do not add leverage.`
+          : "High risk: account posture is too stressed for fresh leverage.";
 
   const summary =
     account.mode === "sample"
-      ? `Sample account mode shows how Pacifica Risk Room scores a trader before they add leverage. Current score: ${score}/100.`
-      : `Live account review scored ${score}/100 using Pacifica equity, positions, open orders, carry drag, and current market stress.`;
+      ? `Sample account mode shows how Pacifica Account Health turns positions and market data into a safety score. Current score: ${score}/100.`
+      : `Live Pacifica account scored ${score}/100 from equity, exposure, liquidation buffer, funding, and market context.`;
 
   return {
     score,
