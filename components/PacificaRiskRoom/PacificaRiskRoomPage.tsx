@@ -114,6 +114,11 @@ interface ConnectedWalletState {
   label: string;
 }
 
+interface ActionToastState {
+  tone: "info" | "success" | "danger";
+  message: string;
+}
+
 type GuideTargetId =
   | "connect-wallet"
   | "wallet-form"
@@ -708,6 +713,7 @@ function WatchCard({
   const payload = snapshot?.payload;
   const evaluation = payload ? evaluateWatchItem(item, payload) : null;
   const tone = evaluation ? RISK_TONES[evaluation.severity] : RISK_TONES.watch;
+  const breachedRules = evaluation?.alerts.length || 0;
 
   return (
     <article className={cn("rounded-[24px] border bg-[#101b18] px-4 py-4", tone.border)}>
@@ -724,7 +730,7 @@ function WatchCard({
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            Thresholds
+            Saved rules
           </div>
           <div className="mt-2 text-sm leading-7 text-[#c7d0c6]">
             Score {item.minScore}+ · Exposure {item.maxExposureMultiple}x · Buffer {item.minLiqBufferPct}% · Funding {item.maxFundingDragUsd} USD
@@ -732,7 +738,7 @@ function WatchCard({
         </div>
         <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
-            State
+            Live state
           </div>
           {snapshot?.loading ? (
             <div className="mt-2 inline-flex items-center gap-2 text-sm text-[#c7d0c6]">
@@ -755,6 +761,12 @@ function WatchCard({
         </div>
       </div>
 
+      <div className="mt-3 text-xs text-[#7f9189]">
+        {breachedRules
+          ? `${breachedRules} threshold${breachedRules > 1 ? "s" : ""} breached right now.`
+          : "No saved thresholds are breached right now."}
+      </div>
+
       {evaluation?.alerts.length ? (
         <div className="mt-4 space-y-2">
           {evaluation.alerts.slice(0, 3).map((alert) => (
@@ -774,7 +786,7 @@ function WatchCard({
           onClick={onLoad}
           className="inline-flex items-center gap-2 rounded-full border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-2 text-sm text-[#f7f1df] transition hover:bg-white/[0.08]"
         >
-          Load
+          Load Desk
           <ChevronRight className="h-4 w-4" />
         </button>
         <button
@@ -865,8 +877,10 @@ export default function PacificaRiskRoomPage() {
   );
   const [walletError, setWalletError] = useState("");
   const [connectedWallet, setConnectedWallet] = useState<ConnectedWalletState | null>(null);
+  const [actionToast, setActionToast] = useState<ActionToastState | null>(null);
   const walletProviderRef = useRef<WalletProviderDescriptor | null>(null);
   const walletCleanupRef = useRef<(() => void) | null>(null);
+  const actionToastTimeoutRef = useRef<number | null>(null);
   const connectWalletButtonRef = useRef<HTMLButtonElement | null>(null);
   const walletFormRef = useRef<HTMLFormElement | null>(null);
   const deskMetricsRef = useRef<HTMLDivElement | null>(null);
@@ -890,6 +904,19 @@ export default function PacificaRiskRoomPage() {
     setGuideStepIndex(step);
     setGuideOpen(true);
   };
+
+  const flashAction = useCallback(
+    (message: string, tone: ActionToastState["tone"] = "info") => {
+      setActionToast({ message, tone });
+      if (actionToastTimeoutRef.current) {
+        window.clearTimeout(actionToastTimeoutRef.current);
+      }
+      actionToastTimeoutRef.current = window.setTimeout(() => {
+        setActionToast(null);
+      }, 2400);
+    },
+    [],
+  );
 
   const syncConnectedWallet: (
     address: string,
@@ -1073,6 +1100,14 @@ export default function PacificaRiskRoomPage() {
     } catch {
       setGuideShouldAutoOpen(true);
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (actionToastTimeoutRef.current) {
+        window.clearTimeout(actionToastTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -1547,12 +1582,13 @@ export default function PacificaRiskRoomPage() {
   function handleSaveWatch() {
     const accountId = submittedAccount.trim();
     if (!accountId) {
+      flashAction("Load a live desk before saving a watch profile.", "danger");
       return;
     }
 
     const now = new Date().toISOString();
+    const existing = watchItems.find((item) => item.accountId === accountId);
     setWatchItems((current) => {
-      const existing = current.find((item) => item.accountId === accountId);
       const nextItem: PacificaWatchItem = {
         id: existing?.id || crypto.randomUUID(),
         label: watchLabel.trim() || `Desk ${shortAddress(accountId)}`,
@@ -1571,9 +1607,16 @@ export default function PacificaRiskRoomPage() {
 
       return [nextItem, ...current].slice(0, 8);
     });
+    flashAction(
+      existing
+        ? `Updated watch thresholds for ${shortAddress(accountId)}.`
+        : `Saved ${shortAddress(accountId)} to your watch list.`,
+      "success",
+    );
   }
 
   function handleLoadWatch(item: PacificaWatchItem) {
+    const isSameAccount = submittedAccount.trim() === item.accountId;
     setAccountInput(item.accountId);
     setSubmittedAccount(item.accountId);
     setWatchLabel(item.label);
@@ -1583,25 +1626,44 @@ export default function PacificaRiskRoomPage() {
       minLiqBufferPct: item.minLiqBufferPct,
       maxFundingDragUsd: item.maxFundingDragUsd,
     });
-    setActiveWorkspace("watch");
+    setActiveWorkspace("overview");
+    if (isSameAccount) {
+      setRefreshNonce((value) => value + 1);
+    }
+    flashAction(`Loaded saved desk ${item.label}.`, "info");
   }
 
   function handleDeleteWatch(id: string) {
+    const item = watchItems.find((watchItem) => watchItem.id === id);
+    if (!item) {
+      return;
+    }
+
+    if (!window.confirm(`Remove saved desk "${item.label}"?`)) {
+      return;
+    }
+
     setWatchItems((current) => current.filter((item) => item.id !== id));
     setWatchSnapshots((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
+    flashAction(`Removed saved desk ${item.label}.`, "info");
   }
 
   async function handleCopyWatchLink(item: PacificaWatchItem) {
     const link = `${window.location.origin}/app?account=${encodeURIComponent(item.accountId)}`;
-    await navigator.clipboard.writeText(link);
-    setCopiedWatchId(item.id);
-    window.setTimeout(() => {
-      setCopiedWatchId((current) => (current === item.id ? "" : current));
-    }, 1500);
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedWatchId(item.id);
+      flashAction(`Copied share link for ${item.label}.`, "success");
+      window.setTimeout(() => {
+        setCopiedWatchId((current) => (current === item.id ? "" : current));
+      }, 1500);
+    } catch {
+      flashAction("Failed to copy the share link from this browser.", "danger");
+    }
   }
 
   return (
@@ -1646,7 +1708,18 @@ export default function PacificaRiskRoomPage() {
                 className="mt-4 rounded-[24px] border border-[#f7f1df]/12 bg-[#101b18] p-4"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  setSubmittedAccount(accountInput.trim());
+                  const nextAccount = accountInput.trim();
+                  setActiveWorkspace("overview");
+                  if (nextAccount === submittedAccount.trim()) {
+                    setRefreshNonce((value) => value + 1);
+                  }
+                  setSubmittedAccount(nextAccount);
+                  flashAction(
+                    nextAccount
+                      ? `Reviewing desk for ${shortAddress(nextAccount)}.`
+                      : "Loading sample desk.",
+                    "info",
+                  );
                 }}
               >
                 <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#7f9189]">
@@ -1692,8 +1765,17 @@ export default function PacificaRiskRoomPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      const wasLive = Boolean(submittedAccount.trim());
+                      setActiveWorkspace("overview");
                       setAccountInput("");
                       setSubmittedAccount("");
+                      if (!wasLive) {
+                        setRefreshNonce((value) => value + 1);
+                      }
+                      flashAction(
+                        wasLive ? "Switched to sample desk." : "Reloading sample desk.",
+                        "info",
+                      );
                     }}
                     className="w-full rounded-[16px] border border-[#f7f1df]/12 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-[#e9e0cf] transition hover:bg-white/[0.08]"
                   >
@@ -2616,6 +2698,10 @@ export default function PacificaRiskRoomPage() {
 
                     <ShellPane eyebrow="Saved desks" title="Triggered thresholds and quick reload">
                       <div className="space-y-3">
+                        <div className="rounded-[22px] border border-[#f7f1df]/10 bg-white/[0.03] px-4 py-4 text-sm leading-7 text-[#a8b6ac]">
+                          Each saved desk stores your own risk floors for one account. The card shows
+                          which of those rules are currently breached, and <span className="text-[#f7f1df]">Load Desk</span> reopens that account in the main workspace.
+                        </div>
                         {watchItems.length ? (
                           watchItems.map((item) => {
                             const snapshot =
@@ -2766,6 +2852,23 @@ export default function PacificaRiskRoomPage() {
           ) : null}
         </div>
       </div>
+
+      {actionToast ? (
+        <div className="pointer-events-none fixed right-4 top-4 z-40 md:right-6 md:top-6">
+          <div
+            className={cn(
+              "max-w-[360px] rounded-[22px] border px-4 py-3 text-sm shadow-[0_18px_80px_rgba(0,0,0,0.42)] backdrop-blur-xl",
+              actionToast.tone === "success"
+                ? "border-[#65f3e0]/24 bg-[#081412]/94 text-[#bafdf4]"
+                : actionToast.tone === "danger"
+                  ? "border-[#ff7a59]/24 bg-[#180c0a]/94 text-[#ffd2c6]"
+                  : "border-[#f7f1df]/12 bg-[#0d1513]/94 text-[#f7f1df]",
+            )}
+          >
+            {actionToast.message}
+          </div>
+        </div>
+      ) : null}
 
       {guideOpen && guideTargetRect && guideCardPosition ? (
         <>
