@@ -87,7 +87,7 @@ README, screenshots, demo script, and submission answers are already prepared.
 5. Enter an account id or explain sample mode.
 6. End on the safe order plan and why this belongs in Analytics & Data.
 
-## Links To Fill Before Final Submission
+## Remaining External Links
 
 - Repository URL: `https://github.com/richard7463/pacifica-risk-room`
 - Pull Request URL: `not applicable, standalone repository`
@@ -105,6 +105,6 @@ README, screenshots, demo script, and submission answers are already prepared.
 ## Final Checklist
 
 - record or upload demo video
-- replace repository and PR placeholders with real links
+- verify the repository and live demo links in the submission form
 - add a live Pacifica account id during demo if available
 - submit under `Analytics & Data`

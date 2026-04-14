@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
   if (!marketSnapshot.length) {
     marketMode = "sample";
     notes.push(
-      "Public Pacifica market data was unavailable during this request. Falling back to seeded market mode so the demo stays usable.",
+      "Public Pacifica market data was unavailable during this request. Falling back to seeded market mode so the workspace remains available.",
     );
     marketSnapshot = buildSampleMarketSnapshot();
   }

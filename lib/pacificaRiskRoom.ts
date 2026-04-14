@@ -805,7 +805,7 @@ function buildOperatorPlaybook(
 ) {
   const steps = [
     "Keep every new entry inside a staggered limit ladder instead of crossing the spread at full size.",
-    "Attach a reduce-only exit before adding new gross exposure so the dashboard remains replayable on demo day.",
+    "Attach a reduce-only exit before adding new gross exposure so every position has a defined path back to neutral.",
   ];
 
   if (marginUsagePct >= 45) {

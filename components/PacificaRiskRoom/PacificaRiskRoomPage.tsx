@@ -871,7 +871,7 @@ export default function PacificaRiskRoomPage() {
                     Pacifica-native risk workspace
                   </div>
                   <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.05em] text-white md:text-[42px]">
-                    Perps monitoring that looks like an app, not a pitch deck.
+                    Real-time risk workspace for Pacifica perpetuals.
                   </h1>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400 md:text-base">
                     Pacifica Risk Room is structured like a trading workspace: watchlist,
