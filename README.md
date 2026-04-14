@@ -1,6 +1,6 @@
 # Pacifica Account Health
 
-![Hero](docs/assets/risk-room-hero.png)
+![Landing](docs/assets/landing-hero.png)
 
 ![Track](https://img.shields.io/badge/Track-Analytics%20%26%20Data-0f766e)
 ![Platform](https://img.shields.io/badge/Platform-Pacifica%20Perps-111827)
@@ -13,6 +13,12 @@ Know your Pacifica liquidation risk before adding leverage.
 Pacifica Account Health is a live risk dashboard for Pacifica perpetuals accounts. It turns account equity, position exposure, liquidation distance, funding, recent fills, and market context into one clear answer:
 
 **Is this account safe to add leverage right now?**
+
+It also ships as an agent-readable skill:
+
+```bash
+curl -s https://pacifica-risk-room.vercel.app/skill.md > SKILL.md
+```
 
 ## Product Summary
 
@@ -43,11 +49,16 @@ It is not an auto-trading bot. The value is decision support before the trader a
 | Item | Evidence |
 | --- | --- |
 | Track | `Analytics & Data` |
-| Live app | `https://pacifica-risk-room.vercel.app` |
-| Product route | [`app/page.tsx`](app/page.tsx) and [`app/pacifica-risk-room/page.tsx`](app/pacifica-risk-room/page.tsx) |
+| Landing page | `https://pacifica-risk-room.vercel.app` |
+| Product route | `https://pacifica-risk-room.vercel.app/app` |
+| Skill route | `https://pacifica-risk-room.vercel.app/skill.md` |
+| Skill explainer | `https://pacifica-risk-room.vercel.app/skill` |
+| Landing source | [`components/Landing/PacificaLandingPage.tsx`](components/Landing/PacificaLandingPage.tsx) |
+| Product route source | [`app/app/page.tsx`](app/app/page.tsx) and [`app/pacifica-risk-room/page.tsx`](app/pacifica-risk-room/page.tsx) |
+| Product UI source | [`components/PacificaRiskRoom/PacificaRiskRoomPage.tsx`](components/PacificaRiskRoom/PacificaRiskRoomPage.tsx) |
 | API route | [`app/api/pacifica-risk-room/route.ts`](app/api/pacifica-risk-room/route.ts) |
 | Risk engine | [`lib/pacificaRiskRoom.ts`](lib/pacificaRiskRoom.ts) |
-| Main UI | [`components/PacificaRiskRoom/PacificaRiskRoomPage.tsx`](components/PacificaRiskRoom/PacificaRiskRoomPage.tsx) |
+| Skill content | [`lib/skillContent.ts`](lib/skillContent.ts) |
 | Demo script | [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md) |
 | Submission answers | [`docs/SUBMISSION_FORM_ANSWERS.md`](docs/SUBMISSION_FORM_ANSWERS.md) |
 
@@ -68,27 +79,27 @@ It is not an auto-trading bot. The value is decision support before the trader a
 
 | Judging criteria | Evidence in this project |
 | --- | --- |
-| Innovation | Turns Pacifica account, position, funding, and market telemetry into a single pre-liquidation account health decision. |
-| Technical execution | Aggregates multiple Pacifica REST endpoints, computes derived risk metrics, handles live/sample modes, and renders a real-time Next.js product. |
-| User experience | First screen answers the user question directly: whether the account is safe to add leverage and what action to take next. |
+| Innovation | Turns Pacifica account, position, funding, and market telemetry into a single pre-liquidation account health decision for both humans and AI agents. |
+| Technical execution | Aggregates multiple Pacifica REST endpoints, computes derived risk metrics, handles live/sample modes, renders a Next.js product, and serves an agent skill from the same app. |
+| User experience | Landing page explains the product, `/app` answers whether the account is safe to add leverage, and `/skill.md` lets agents run the same check. |
 | Potential impact | Perps traders can reduce avoidable liquidations by seeing exposure/equity, liquidation buffer, and funding cost before increasing risk. |
 | Presentation | README, screenshots, demo script, and form-ready answers are included. |
 
 ## Screenshots
 
-| Account health | Full product |
+| Landing | Account health app |
 | --- | --- |
-| ![Hero](docs/assets/risk-room-hero.png) | ![Panels](docs/assets/risk-room-panels.png) |
+| ![Landing](docs/assets/landing-hero.png) | ![Account health](docs/assets/risk-room-hero.png) |
 
 ## Product Flow
 
-1. Open the app.
-2. The default live Pacifica wallet loads automatically.
-3. Read the account health score and current decision.
-4. Inspect the position driving the score.
-5. Review the recommended action: do not add leverage, reduce exposure, or add collateral.
-6. Use market and funding panels as context.
-7. Open Live Data Proof to see the Pacifica endpoints used.
+1. Open the landing page.
+2. Launch the account health app.
+3. The default live Pacifica wallet loads automatically.
+4. Read the account health score and current decision.
+5. Inspect the position driving the score.
+6. Review the recommended action: do not add leverage, reduce exposure, or add collateral.
+7. Download `skill.md` so an AI agent can run the same risk check.
 
 ## Architecture
 
@@ -127,6 +138,22 @@ sequenceDiagram
   Page-->>User: Show safety decision, position risk, and data proof
 ```
 
+## Agent Skill
+
+The project exposes a reusable skill at:
+
+```text
+https://pacifica-risk-room.vercel.app/skill.md
+```
+
+Agents use it to:
+
+- ask for a Pacifica wallet or subaccount address
+- call the Account Health API
+- classify account risk
+- summarize exposure/equity and liquidation buffer
+- avoid suggesting fresh leverage when the account is critical
+
 ## What Makes It Different
 
 | Generic perps dashboard | Pacifica Account Health |
@@ -153,7 +180,10 @@ http://localhost:3000
 ## Submission Package
 
 - README: this file
-- Live route: `/`
+- Landing route: `/`
+- Product route: `/app`
 - Compatibility route: `/pacifica-risk-room`
+- Agent skill: `/skill.md`
+- Skill explainer: `/skill`
 - Demo script: [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md)
 - Submission answers: [`docs/SUBMISSION_FORM_ANSWERS.md`](docs/SUBMISSION_FORM_ANSWERS.md)

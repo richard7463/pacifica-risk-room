@@ -10,7 +10,7 @@ Analytics & Data
 
 ## One-Line Description
 
-Pacifica Account Health shows whether a Pacifica perps account is safe to add leverage by combining live account equity, position exposure, liquidation distance, funding, and market context.
+Pacifica Account Health shows whether a Pacifica perps account is safe to add leverage by combining live account equity, position exposure, liquidation distance, funding, and market context, then exposes the same risk check as an agent-readable skill.
 
 ## What Problem Does It Solve
 
@@ -24,6 +24,8 @@ Perps traders often know their position size, but not whether the whole account 
 
 Pacifica Account Health turns those questions into one live account health dashboard.
 
+It also ships `/skill.md`, so AI agents can run the same risk check before suggesting Pacifica leverage.
+
 ## What Makes It Innovative
 
 - It is Pacifica-native rather than a generic perps terminal.
@@ -31,6 +33,7 @@ Pacifica Account Health turns those questions into one live account health dashb
 - It focuses on the live position driving risk instead of showing every market equally.
 - It converts account data into trader-readable guidance: do not add leverage, reduce exposure, or add collateral.
 - It keeps market and funding data as context while making account health the primary product.
+- It exposes the same workflow as an agent skill for AI trading assistants.
 
 ## Pacifica APIs Used
 
@@ -47,13 +50,14 @@ Pacifica Account Health turns those questions into one live account health dashb
 
 ## User Flow
 
-1. Open Pacifica Account Health.
-2. The default live Pacifica wallet loads automatically.
-3. Read the account health score and current decision.
-4. Inspect the position driving the score.
-5. Review exposure/equity, liquidation buffer, and funding cost.
-6. Follow the recommended action before adding leverage.
-7. Check Live Data Proof to verify the Pacifica endpoints used.
+1. Open the landing page.
+2. Launch the Account Health app.
+3. The default live Pacifica wallet loads automatically.
+4. Read the account health score and current decision.
+5. Inspect the position driving the score.
+6. Review exposure/equity, liquidation buffer, and funding cost.
+7. Download `/skill.md` to show the agent workflow.
+8. Check Live Data Proof to verify the Pacifica endpoints used.
 
 ## Why It Fits This Track
 
@@ -64,12 +68,13 @@ The project maps directly to `Analytics & Data` because it provides:
 - liquidation-risk analytics
 - funding-cost analytics
 - a risk dashboard built from Pacifica-native data
+- an agent skill that lets AI workflows call the same risk layer
 
 It does not execute trades automatically. It helps traders make safer decisions before increasing leverage.
 
 ## Short Demo Summary
 
-The demo opens on a live Pacifica account. The app detects that BTC is the main risk driver, shows exposure at roughly `11x` equity, highlights the liquidation buffer, and recommends not adding leverage until BTC exposure is reduced or collateral is added.
+The demo opens on a landing page for both humans and agents. The app detects that BTC is the main risk driver, shows exposure at roughly `11x` equity, highlights the liquidation buffer, and recommends not adding leverage until BTC exposure is reduced or collateral is added. The demo then shows `/skill.md`, which lets AI agents call the same Account Health API before suggesting leverage.
 
 ## Future Expansion
 

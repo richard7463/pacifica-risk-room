@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import PacificaRiskRoomPage from "@/components/PacificaRiskRoom/PacificaRiskRoomPage";
+import PacificaLandingPage from "@/components/Landing/PacificaLandingPage";
 
 export default function HomePage() {
-  return (
-    <Suspense fallback={null}>
-      <PacificaRiskRoomPage />
-    </Suspense>
-  );
+  return <PacificaLandingPage />;
 }
