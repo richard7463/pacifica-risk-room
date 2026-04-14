@@ -28,16 +28,17 @@ interface PacificaEnvelope<T> {
   last_order_id?: number;
 }
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 6_000;
+const ACCOUNT_REQUEST_TIMEOUT_MS = 7_500;
 
 const asRecordArray = (value: unknown) =>
   Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 
 const trimAccountId = (value: string | null) => (value || "").trim();
 
-async function fetchPacificaJson<T>(path: string) {
+async function fetchPacificaJson<T>(path: string, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${PACIFICA_API_BASE}${path}`, {
@@ -63,9 +64,9 @@ async function fetchPacificaJson<T>(path: string) {
   }
 }
 
-async function safeFetch<T>(path: string) {
+async function safeFetch<T>(path: string, timeoutMs = REQUEST_TIMEOUT_MS) {
   try {
-    const data = await fetchPacificaJson<T>(path);
+    const data = await fetchPacificaJson<T>(path, timeoutMs);
     return { ok: true as const, data };
   } catch (error) {
     return {
@@ -92,6 +93,34 @@ export async function GET(request: NextRequest) {
 
   let marketMode: PacificaDataMode = "live";
   let accountMode: PacificaDataMode = accountId ? "live" : "sample";
+  const accountRequests = accountId
+    ? Promise.all([
+        safeFetch<Record<string, unknown>>(
+          `/account?account=${encodeURIComponent(accountId)}`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+        safeFetch<Array<Record<string, unknown>>>(
+          `/positions?account=${encodeURIComponent(accountId)}`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+        safeFetch<Array<Record<string, unknown>>>(
+          `/orders?account=${encodeURIComponent(accountId)}`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+        safeFetch<Array<Record<string, unknown>>>(
+          `/trades/history?account=${encodeURIComponent(accountId)}`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+        safeFetch<Array<Record<string, unknown>>>(
+          `/positions/history?account=${encodeURIComponent(accountId)}`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+        safeFetch<Array<Record<string, unknown>>>(
+          `/portfolio?account=${encodeURIComponent(accountId)}&time_range=1d`,
+          ACCOUNT_REQUEST_TIMEOUT_MS,
+        ),
+      ])
+    : null;
 
   const [infoResult, pricesResult] = await Promise.all([
     safeFetch<Array<Record<string, unknown>>>("/info"),
@@ -173,22 +202,9 @@ export async function GET(request: NextRequest) {
       ? null
       : buildSampleAccountSummary(marketSnapshot);
 
-  if (accountId) {
+  if (accountId && accountRequests) {
     const [accountResult, positionsResult, ordersResult, tradesHistoryResult, positionsHistoryResult, portfolioResult] =
-      await Promise.all([
-        safeFetch<Record<string, unknown>>(`/account?account=${encodeURIComponent(accountId)}`),
-        safeFetch<Array<Record<string, unknown>>>(`/positions?account=${encodeURIComponent(accountId)}`),
-        safeFetch<Array<Record<string, unknown>>>(`/orders?account=${encodeURIComponent(accountId)}`),
-        safeFetch<Array<Record<string, unknown>>>(
-          `/trades/history?account=${encodeURIComponent(accountId)}`,
-        ),
-        safeFetch<Array<Record<string, unknown>>>(
-          `/positions/history?account=${encodeURIComponent(accountId)}`,
-        ),
-        safeFetch<Array<Record<string, unknown>>>(
-          `/portfolio?account=${encodeURIComponent(accountId)}&time_range=1d`,
-        ),
-      ]);
+      await accountRequests;
 
     if (accountResult.ok) {
       account = buildAccountSummary(

@@ -23,6 +23,7 @@ import {
   Waves,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DEFAULT_LIVE_PACIFICA_ACCOUNT } from "@/lib/pacificaRiskRoom";
 import type {
   PacificaFundingCurve,
   PacificaOrder,
@@ -603,8 +604,8 @@ function buildPositionCloseActivity(item: PacificaPositionHistoryItem): Activity
 export default function PacificaRiskRoomPage() {
   const searchParams = useSearchParams();
   const compactMode = searchParams.get("compact") === "1";
-  const [accountInput, setAccountInput] = useState("");
-  const [submittedAccount, setSubmittedAccount] = useState("");
+  const [accountInput, setAccountInput] = useState(DEFAULT_LIVE_PACIFICA_ACCOUNT);
+  const [submittedAccount, setSubmittedAccount] = useState(DEFAULT_LIVE_PACIFICA_ACCOUNT);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [payload, setPayload] = useState<PacificaRiskRoomResponse | null>(null);
   const [focusSymbol, setFocusSymbol] = useState("");
@@ -811,7 +812,7 @@ export default function PacificaRiskRoomPage() {
               <input
                 value={accountInput}
                 onChange={(event) => setAccountInput(event.target.value)}
-                placeholder="Pacifica account id"
+                placeholder="Pacifica wallet or subaccount address"
                 className="w-full rounded-[18px] border border-white/10 bg-[#10182c] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40"
               />
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">

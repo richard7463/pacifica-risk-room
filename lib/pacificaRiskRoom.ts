@@ -1,4 +1,5 @@
 export const PACIFICA_API_BASE = "https://api.pacifica.fi/api/v1";
+export const DEFAULT_LIVE_PACIFICA_ACCOUNT = "96BSa5qqWnQ7WHF8TEyRVpGjWbc2srgCWsSMfNVyZptn";
 
 export const DEFAULT_PACIFICA_SYMBOLS = [
   "BTC",
