@@ -10,7 +10,7 @@ Analytics & Data
 
 ## One-Line Description
 
-Pacifica Account Health shows whether a Pacifica perps account is safe to add leverage by combining live account equity, position exposure, liquidation distance, funding, and market context, then exposes the same risk check as an agent-readable skill.
+Pacifica Account Health turns recent Pacifica trading history into a personal risk profile, combines that with live account exposure, liquidation distance, funding, and market context, and exposes the same risk check as an agent-readable skill.
 
 ## What Problem Does It Solve
 

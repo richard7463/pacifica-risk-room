@@ -61,6 +61,10 @@ export interface PacificaWatchItem {
   maxExposureMultiple: number;
   minLiqBufferPct: number;
   maxFundingDragUsd: number;
+  profileMethod?: "manual" | "history";
+  profilePosture?: "defensive" | "balanced" | "aggressive";
+  profileSummary?: string;
+  profileEvidence?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -70,6 +74,23 @@ export interface PacificaWatchEvaluation {
   alerts: string[];
   metrics: PacificaHealthMetrics;
   score: number;
+}
+
+export interface PacificaGeneratedRiskProfile {
+  mode: "history" | "fallback";
+  posture: "defensive" | "balanced" | "aggressive";
+  thresholds: Pick<
+    PacificaWatchItem,
+    "minScore" | "maxExposureMultiple" | "minLiqBufferPct" | "maxFundingDragUsd"
+  >;
+  sample: {
+    trades: number;
+    closedPositions: number;
+    equityPoints: number;
+  };
+  summary: string;
+  evidence: string;
+  reasons: string[];
 }
 
 export const DEFAULT_SCENARIO_INPUT: PacificaScenarioInput = {
@@ -121,6 +142,230 @@ function sortPositions(positions: PacificaPosition[]) {
   return positions
     .filter((position) => position.notionalUsd > 0.5)
     .sort((left, right) => right.notionalUsd - left.notionalUsd);
+}
+
+function percentile(values: number[], fraction: number) {
+  if (!values.length) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = clamp(Math.round((sorted.length - 1) * fraction), 0, sorted.length - 1);
+  return sorted[index];
+}
+
+function median(values: number[]) {
+  return percentile(values, 0.5);
+}
+
+function computePortfolioDrawdownPct(account: PacificaAccountSummary) {
+  if (account.portfolioHistory.length < 2) {
+    return 0;
+  }
+
+  let peak = account.portfolioHistory[0]?.equityUsd || account.equityUsd;
+  let maxDrawdown = 0;
+
+  for (const point of account.portfolioHistory) {
+    peak = Math.max(peak, point.equityUsd);
+    if (peak <= 0) {
+      continue;
+    }
+
+    const drawdownPct = ((peak - point.equityUsd) / peak) * 100;
+    maxDrawdown = Math.max(maxDrawdown, drawdownPct);
+  }
+
+  return round(maxDrawdown, 1);
+}
+
+export function buildRiskProfileFromHistory(
+  account: PacificaAccountSummary,
+  fundingCurves: PacificaFundingCurve[],
+): PacificaGeneratedRiskProfile {
+  const metrics = computeHealthMetrics(account, fundingCurves);
+  const equitySeries = account.portfolioHistory.map((point) => point.equityUsd).filter((value) => value > 0);
+  const equityBasis = Math.max(median(equitySeries) || account.equityUsd || 1, 1);
+  const closedPositionNotionals = account.positionHistory
+    .map((position) => Math.max(position.entryPrice, position.exitPrice) * position.amount)
+    .filter((value) => value > 0);
+  const tradeNotionals = account.tradeHistory
+    .map((trade) => Math.abs(trade.notionalUsd))
+    .filter((value) => value > 0);
+  const currentLineNotionals = account.positions
+    .map((position) => Math.abs(position.notionalUsd))
+    .filter((value) => value > 0);
+  const notionalSamples = [
+    ...closedPositionNotionals,
+    ...tradeNotionals.slice(0, 10),
+    ...currentLineNotionals,
+  ];
+  const tradeSamples = account.tradeHistory.length;
+  const closedPositionSamples = account.positionHistory.length;
+  const equitySamples = equitySeries.length;
+  const drawdownPct = computePortfolioDrawdownPct(account);
+  const realizedPnlSamples = account.positionHistory.map((position) => position.realizedPnlUsd);
+  const winRate =
+    realizedPnlSamples.length >= 3
+      ? realizedPnlSamples.filter((value) => value > 0).length / realizedPnlSamples.length
+      : null;
+  const typicalLineNotional = percentile(notionalSamples, 0.7) || metrics.grossExposureUsd || equityBasis * 0.55;
+  const lineToEquityRatio = typicalLineNotional / Math.max(equityBasis, 1);
+  const cadenceScore = clamp(tradeSamples / 14, 0, 1);
+  const postureScore = clamp(lineToEquityRatio * 0.82 + cadenceScore * 0.24, 0, 1.2);
+  const hasRichHistory =
+    tradeSamples >= 6 ||
+    closedPositionSamples >= 4 ||
+    (tradeSamples >= 3 && closedPositionSamples >= 2) ||
+    (equitySamples >= 24 && (tradeSamples >= 3 || closedPositionSamples >= 3));
+  const mode: PacificaGeneratedRiskProfile["mode"] = hasRichHistory ? "history" : "fallback";
+
+  let posture: PacificaGeneratedRiskProfile["posture"] = "balanced";
+  if (mode === "history") {
+    if (postureScore >= 0.86) {
+      posture = "aggressive";
+    } else if (postureScore <= 0.48) {
+      posture = "defensive";
+    }
+  }
+  const thresholdsByPosture = {
+    defensive: {
+      minScore: 78,
+      maxExposureMultiple: 6,
+      minLiqBufferPct: 12,
+      maxFundingDragUsd: 1.5,
+    },
+    balanced: {
+      minScore: 70,
+      maxExposureMultiple: 8,
+      minLiqBufferPct: 9,
+      maxFundingDragUsd: 2.5,
+    },
+    aggressive: {
+      minScore: 62,
+      maxExposureMultiple: 10.5,
+      minLiqBufferPct: 7,
+      maxFundingDragUsd: 4,
+    },
+  } as const;
+  const base = thresholdsByPosture[posture];
+  const fallbackBase = thresholdsByPosture.balanced;
+  const fundingObservations = [
+    metrics.fundingDragUsd,
+    ...account.positions.map((position) => Math.abs(position.fundingPaidUsd)),
+  ].filter((value) => value > 0);
+  const fundingTolerance = percentile(fundingObservations, 0.75) || base.maxFundingDragUsd;
+  const isTightenNeeded =
+    drawdownPct >= 12 ||
+    (winRate !== null && winRate < 0.45) ||
+    account.positionHistory.reduce((sum, position) => sum + position.realizedPnlUsd, 0) < 0;
+  const currentExposureFloor = Math.max(
+    4,
+    Math.min(12, round(Math.max(lineToEquityRatio * Math.max(account.positions.length, 1.35), 4), 1)),
+  );
+  const displayedDrawdownPct = drawdownPct > 0 ? round(Math.min(drawdownPct, 35), 1) : 0;
+
+  const thresholds =
+    mode === "history"
+      ? {
+          minScore: clamp(base.minScore + (isTightenNeeded ? 4 : 0), 55, 88),
+          maxExposureMultiple: round(
+            clamp(
+              Math.min(base.maxExposureMultiple, currentExposureFloor + (posture === "aggressive" ? 1.2 : 0)),
+              4,
+              12,
+            ) - (isTightenNeeded ? 0.8 : 0),
+            1,
+          ),
+          minLiqBufferPct: round(clamp(base.minLiqBufferPct + (isTightenNeeded ? 1.5 : 0), 6, 16), 1),
+          maxFundingDragUsd: round(
+            clamp(
+              Math.max(base.maxFundingDragUsd, fundingTolerance * 1.6, metrics.fundingDragUsd * 2.8),
+              0.5,
+              6,
+            ) - (isTightenNeeded ? 0.4 : 0),
+            2,
+          ),
+        }
+      : {
+          minScore: clamp(fallbackBase.minScore + (metrics.exposureMultiple > 10 ? 2 : 0), 68, 78),
+          maxExposureMultiple: round(
+            clamp(
+              Math.min(
+                fallbackBase.maxExposureMultiple,
+                Math.max(6.5, Math.min(8.5, Math.max(metrics.exposureMultiple * 0.8, 7.2))),
+              ),
+              6.5,
+              8.5,
+            ),
+            1,
+          ),
+          minLiqBufferPct: round(
+            clamp(
+              fallbackBase.minLiqBufferPct +
+                (metrics.tightestLiqDistancePct !== null && metrics.tightestLiqDistancePct < 8 ? 0.5 : 0),
+              9,
+              11,
+            ),
+            1,
+          ),
+          maxFundingDragUsd: round(
+            clamp(
+              Math.max(fallbackBase.maxFundingDragUsd, fundingTolerance * 1.2, metrics.fundingDragUsd * 2.2),
+              2,
+              3,
+            ),
+            2,
+          ),
+        };
+
+  const postureLabel =
+    posture === "aggressive"
+      ? "an aggressive trading posture"
+      : posture === "defensive"
+        ? "a defensive trading posture"
+        : "a balanced trading posture";
+  const summary =
+    mode === "history"
+      ? `Generated ${postureLabel} from recent Pacifica trading history.`
+      : `Realized trading history is still thin, so the profile falls back to balanced Pacifica guardrails adjusted to the live desk.`;
+  const evidence = `${tradeSamples} trades · ${closedPositionSamples} closed positions · ${equitySamples} equity points`;
+  const reasons =
+    mode === "history"
+      ? [
+          `Typical line size is about ${round(typicalLineNotional, 0)} USD on an equity base near ${round(equityBasis, 0)} USD, so the exposure ceiling is set around ${thresholds.maxExposureMultiple}x.`,
+          displayedDrawdownPct > 0
+            ? `Recent portfolio drawdown reached about ${displayedDrawdownPct}%, so the liquidation floor is held at ${thresholds.minLiqBufferPct}%.`
+            : `Portfolio history is calm, so the liquidation floor is set to a practical ${thresholds.minLiqBufferPct}%.`,
+          `Observed carry and current funding pressure imply a max funding-drag alert near ${thresholds.maxFundingDragUsd} USD.`,
+        ]
+      : [
+          `The desk has only ${tradeSamples} recent trades and ${closedPositionSamples} closed positions, so the profile defaults to balanced guardrails instead of inferring an aggressive posture.`,
+          `Current live exposure is ${round(metrics.exposureMultiple, 1)}x equity, so the fallback ceiling stays near ${thresholds.maxExposureMultiple}x with a ${thresholds.minLiqBufferPct}% liquidation floor.`,
+          `Observed carry and current funding pressure imply a max funding-drag alert near ${thresholds.maxFundingDragUsd} USD.`,
+        ];
+
+  if (mode === "history" && winRate !== null) {
+    reasons.splice(
+      1,
+      0,
+      `Closed-position win rate is about ${round(winRate * 100, 0)}%, which ${isTightenNeeded ? "tightens" : "supports"} the score floor at ${thresholds.minScore}.`,
+    );
+  }
+
+  return {
+    mode,
+    posture,
+    thresholds,
+    sample: {
+      trades: tradeSamples,
+      closedPositions: closedPositionSamples,
+      equityPoints: equitySamples,
+    },
+    summary,
+    evidence,
+    reasons: reasons.slice(0, 3),
+  };
 }
 
 export function computeHealthMetrics(

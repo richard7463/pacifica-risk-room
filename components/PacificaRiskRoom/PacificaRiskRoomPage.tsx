@@ -37,10 +37,12 @@ import type {
 } from "@/lib/pacificaRiskRoom";
 import {
   DEFAULT_SCENARIO_INPUT,
+  buildRiskProfileFromHistory,
   buildPlannerOptions,
   buildScenarioResult,
   computeHealthMetrics,
   evaluateWatchItem,
+  type PacificaGeneratedRiskProfile,
   type PacificaPlannerOption,
   type PacificaScenarioAction,
   type PacificaScenarioInput,
@@ -117,6 +119,10 @@ interface ConnectedWalletState {
 interface ActionToastState {
   tone: "info" | "success" | "danger";
   message: string;
+}
+
+function startCase(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 type GuideTargetId =
@@ -721,6 +727,11 @@ function WatchCard({
         <div>
           <div className="text-base font-semibold text-[#f7f1df]">{item.label}</div>
           <div className="mt-1 text-sm text-[#7f9189]">{item.accountId}</div>
+          {item.profileMethod === "history" ? (
+            <div className="mt-2 text-xs text-[#bafdf4]">
+              {startCase(item.profilePosture || "balanced")} history-built profile
+            </div>
+          ) : null}
         </div>
         <StatusPill tone={evaluation?.severity === "critical" ? "risk" : "soft"}>
           {payload ? `${payload.riskSummary.score}/100` : snapshot?.loading ? "syncing" : "idle"}
@@ -766,6 +777,14 @@ function WatchCard({
           ? `${breachedRules} threshold${breachedRules > 1 ? "s" : ""} breached right now.`
           : "No saved thresholds are breached right now."}
       </div>
+      {item.profileSummary ? (
+        <div className="mt-3 rounded-[16px] border border-[#65f3e0]/12 bg-[#65f3e0]/8 px-4 py-3 text-sm leading-6 text-[#c7f5ef]">
+          {item.profileSummary}
+          {item.profileEvidence ? (
+            <div className="mt-2 text-xs text-[#99dcd2]">{item.profileEvidence}</div>
+          ) : null}
+        </div>
+      ) : null}
 
       {evaluation?.alerts.length ? (
         <div className="mt-4 space-y-2">
@@ -855,6 +874,9 @@ export default function PacificaRiskRoomPage() {
     minLiqBufferPct: 10,
     maxFundingDragUsd: 3,
   });
+  const [watchProfileMode, setWatchProfileMode] = useState<"manual" | "history">("manual");
+  const [watchProfileSnapshot, setWatchProfileSnapshot] =
+    useState<PacificaGeneratedRiskProfile | null>(null);
   const [watchSnapshots, setWatchSnapshots] = useState<Record<string, WatchSnapshotState>>({});
   const [copiedWatchId, setCopiedWatchId] = useState("");
   const [guideOpen, setGuideOpen] = useState(false);
@@ -930,6 +952,8 @@ export default function PacificaRiskRoomPage() {
       family: descriptor.family,
       label: descriptor.label,
     });
+    setWatchProfileMode("manual");
+    setWatchProfileSnapshot(null);
     setWalletStatus("connected");
     setWalletError("");
     setAccountInput(address);
@@ -1414,6 +1438,9 @@ export default function PacificaRiskRoomPage() {
   const currentMetrics = payload
     ? computeHealthMetrics(payload.account, payload.fundingCurves)
     : null;
+  const historyRiskProfile = payload
+    ? buildRiskProfileFromHistory(payload.account, payload.fundingCurves)
+    : null;
   const scenarioResult = payload
     ? buildScenarioResult(payload, scenarioInput)
     : null;
@@ -1453,6 +1480,8 @@ export default function PacificaRiskRoomPage() {
       )
     : 1000;
   const selectedMarketMaxLeverage = selectedMarket?.maxLeverage || 10;
+  const activeHistoryProfile =
+    watchProfileMode === "history" ? watchProfileSnapshot || historyRiskProfile : historyRiskProfile;
   const activeGuideStep = GUIDE_STEPS[guideStepIndex] || GUIDE_STEPS[0];
 
   const resolveGuideTargetElement = useCallback(() => {
@@ -1579,6 +1608,28 @@ export default function PacificaRiskRoomPage() {
     setActiveWorkspace("scenario");
   }
 
+  function applyHistoryRiskProfile(profile: PacificaGeneratedRiskProfile) {
+    setWatchThresholds({
+      minScore: profile.thresholds.minScore,
+      maxExposureMultiple: profile.thresholds.maxExposureMultiple,
+      minLiqBufferPct: profile.thresholds.minLiqBufferPct,
+      maxFundingDragUsd: profile.thresholds.maxFundingDragUsd,
+    });
+    setWatchProfileMode("history");
+    setWatchProfileSnapshot(profile);
+    setWatchLabel((current) =>
+      current.trim()
+        ? current
+        : `${startCase(profile.posture)} profile ${shortAddress(submittedAccount.trim() || DEFAULT_LIVE_PACIFICA_ACCOUNT)}`,
+    );
+    flashAction(
+      profile.mode === "history"
+        ? `Applied a ${profile.posture} risk profile from recent Pacifica history.`
+        : "History was thin, so a blended fallback profile was applied.",
+      "success",
+    );
+  }
+
   function handleSaveWatch() {
     const accountId = submittedAccount.trim();
     if (!accountId) {
@@ -1597,6 +1648,13 @@ export default function PacificaRiskRoomPage() {
         maxExposureMultiple: watchThresholds.maxExposureMultiple,
         minLiqBufferPct: watchThresholds.minLiqBufferPct,
         maxFundingDragUsd: watchThresholds.maxFundingDragUsd,
+        profileMethod: watchProfileMode,
+        profilePosture:
+          watchProfileMode === "history" ? watchProfileSnapshot?.posture : undefined,
+        profileSummary:
+          watchProfileMode === "history" ? watchProfileSnapshot?.summary : undefined,
+        profileEvidence:
+          watchProfileMode === "history" ? watchProfileSnapshot?.evidence : undefined,
         createdAt: existing?.createdAt || now,
         updatedAt: now,
       };
@@ -1626,6 +1684,8 @@ export default function PacificaRiskRoomPage() {
       minLiqBufferPct: item.minLiqBufferPct,
       maxFundingDragUsd: item.maxFundingDragUsd,
     });
+    setWatchProfileMode(item.profileMethod === "history" ? "history" : "manual");
+    setWatchProfileSnapshot(null);
     setActiveWorkspace("overview");
     if (isSameAccount) {
       setRefreshNonce((value) => value + 1);
@@ -1709,6 +1769,8 @@ export default function PacificaRiskRoomPage() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   const nextAccount = accountInput.trim();
+                  setWatchProfileMode("manual");
+                  setWatchProfileSnapshot(null);
                   setActiveWorkspace("overview");
                   if (nextAccount === submittedAccount.trim()) {
                     setRefreshNonce((value) => value + 1);
@@ -1766,6 +1828,8 @@ export default function PacificaRiskRoomPage() {
                     type="button"
                     onClick={() => {
                       const wasLive = Boolean(submittedAccount.trim());
+                      setWatchProfileMode("manual");
+                      setWatchProfileSnapshot(null);
                       setActiveWorkspace("overview");
                       setAccountInput("");
                       setSubmittedAccount("");
@@ -2565,9 +2629,70 @@ export default function PacificaRiskRoomPage() {
                     <ShellPane eyebrow="Watch builder" title="Save thresholds for repeat monitoring">
                       <div className="space-y-4">
                         <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-4 text-sm leading-7 text-[#c7d0c6]">
-                          Turn this into a real monitoring product by saving desk-specific risk floors
-                          and loading them back into the workspace.
+                          Build a risk profile from recent Pacifica history, then keep it as a live
+                          guardrail for this account. You can still override any threshold manually.
                         </div>
+
+                        {historyRiskProfile ? (
+                          <div className="rounded-[24px] border border-[#65f3e0]/18 bg-[linear-gradient(160deg,rgba(101,243,224,0.12),rgba(8,20,18,0.94),rgba(216,255,106,0.06))] p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-[#f7f1df]">
+                                  History-built risk profile
+                                </div>
+                                <div className="mt-2 text-sm leading-7 text-[#c7f5ef]">
+                                  {historyRiskProfile.summary}
+                                </div>
+                                <div className="mt-2 text-xs text-[#8edacf]">
+                                  {historyRiskProfile.evidence}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <StatusPill tone="soft">
+                                  {startCase(historyRiskProfile.posture)}
+                                </StatusPill>
+                                <StatusPill>
+                                  {historyRiskProfile.mode === "history" ? "history-backed" : "blended fallback"}
+                                </StatusPill>
+                              </div>
+                            </div>
+                            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                              <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+                                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                                  Generated guardrails
+                                </div>
+                                <div className="mt-2 text-sm leading-7 text-[#e8f7f3]">
+                                  Score {historyRiskProfile.thresholds.minScore}+ · Exposure {historyRiskProfile.thresholds.maxExposureMultiple}x · Buffer {historyRiskProfile.thresholds.minLiqBufferPct}% · Funding {historyRiskProfile.thresholds.maxFundingDragUsd} USD
+                                </div>
+                              </div>
+                              <div className="rounded-[18px] border border-[#f7f1df]/12 bg-[#07100f]/55 px-4 py-3">
+                                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
+                                  Why these levels
+                                </div>
+                                <div className="mt-2 space-y-2 text-sm leading-6 text-[#c7d0c6]">
+                                  {historyRiskProfile.reasons.map((reason) => (
+                                    <div key={reason}>{reason}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-4 flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => applyHistoryRiskProfile(historyRiskProfile)}
+                                className="inline-flex items-center gap-2 rounded-full bg-[#d8ff6a] px-4 py-2 text-sm font-semibold text-[#07100f] transition hover:bg-[#ebff9b]"
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                Generate from History
+                              </button>
+                              <div className="text-xs text-[#8edacf]">
+                                {watchProfileMode === "history"
+                                  ? "This watch is currently using the generated profile."
+                                  : "Apply this profile, then tweak the thresholds if you want a custom override."}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
 
                         <label className="block">
                           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
@@ -2586,17 +2711,19 @@ export default function PacificaRiskRoomPage() {
                             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
                               Min score
                             </div>
-                            <input
+                          <input
                               type="number"
                               min={20}
                               max={95}
                               value={watchThresholds.minScore}
-                              onChange={(event) =>
+                              onChange={(event) => {
+                                setWatchProfileMode("manual");
+                                setWatchProfileSnapshot(null);
                                 setWatchThresholds((current) => ({
                                   ...current,
                                   minScore: Number(event.target.value) || 0,
-                                }))
-                              }
+                                }));
+                              }}
                               className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
                             />
                           </label>
@@ -2604,18 +2731,20 @@ export default function PacificaRiskRoomPage() {
                             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
                               Max exposure / equity
                             </div>
-                            <input
+                          <input
                               type="number"
                               min={1}
                               max={25}
                               step={0.5}
                               value={watchThresholds.maxExposureMultiple}
-                              onChange={(event) =>
+                              onChange={(event) => {
+                                setWatchProfileMode("manual");
+                                setWatchProfileSnapshot(null);
                                 setWatchThresholds((current) => ({
                                   ...current,
                                   maxExposureMultiple: Number(event.target.value) || 0,
-                                }))
-                              }
+                                }));
+                              }}
                               className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
                             />
                           </label>
@@ -2623,18 +2752,20 @@ export default function PacificaRiskRoomPage() {
                             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
                               Min liq buffer
                             </div>
-                            <input
+                          <input
                               type="number"
                               min={2}
                               max={30}
                               step={0.5}
                               value={watchThresholds.minLiqBufferPct}
-                              onChange={(event) =>
+                              onChange={(event) => {
+                                setWatchProfileMode("manual");
+                                setWatchProfileSnapshot(null);
                                 setWatchThresholds((current) => ({
                                   ...current,
                                   minLiqBufferPct: Number(event.target.value) || 0,
-                                }))
-                              }
+                                }));
+                              }}
                               className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
                             />
                           </label>
@@ -2642,21 +2773,39 @@ export default function PacificaRiskRoomPage() {
                             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7f9189]">
                               Max funding drag
                             </div>
-                            <input
+                          <input
                               type="number"
                               min={0}
                               max={50}
                               step={0.5}
                               value={watchThresholds.maxFundingDragUsd}
-                              onChange={(event) =>
+                              onChange={(event) => {
+                                setWatchProfileMode("manual");
+                                setWatchProfileSnapshot(null);
                                 setWatchThresholds((current) => ({
                                   ...current,
                                   maxFundingDragUsd: Number(event.target.value) || 0,
-                                }))
-                              }
+                                }));
+                              }}
                               className="mt-2 w-full rounded-[18px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-3 text-sm text-[#f7f1df] outline-none"
                             />
                           </label>
+                        </div>
+
+                        <div className="rounded-[22px] border border-[#f7f1df]/12 bg-[#101b18] px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-semibold text-[#f7f1df]">
+                              Current profile source
+                            </div>
+                            <StatusPill tone={watchProfileMode === "history" ? "default" : "soft"}>
+                              {watchProfileMode === "history" ? "history-built" : "manual override"}
+                            </StatusPill>
+                          </div>
+                          <div className="mt-3 text-sm leading-7 text-[#a8b6ac]">
+                            {watchProfileMode === "history" && activeHistoryProfile
+                              ? `${activeHistoryProfile.summary} ${activeHistoryProfile.evidence}.`
+                              : "You are editing the thresholds manually. Use Generate from History to rebuild them from this account's recent Pacifica activity."}
+                          </div>
                         </div>
 
                         {currentWatchEvaluation ? (

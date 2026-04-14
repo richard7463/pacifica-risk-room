@@ -24,8 +24,8 @@ const PROOF_ITEMS = [
     icon: Gauge,
   },
   {
-    title: "Account posture tracking",
-    body: "Account equity, available balance, positions, fills, and portfolio replay.",
+    title: "History-built risk profile",
+    body: "Recent fills, closed positions, current exposure, and portfolio replay become personal risk guardrails.",
     icon: Route,
   },
   {
@@ -35,7 +35,7 @@ const PROOF_ITEMS = [
   },
   {
     title: "Watch and agent workflow",
-    body: "Saved desks, alert thresholds, and a reusable skill so AI assistants can check risk before suggesting leverage.",
+    body: "Generated risk profiles, saved desks, alert thresholds, and a reusable skill so AI assistants can check risk before suggesting leverage.",
     icon: FileCode2,
   },
 ] as const;
@@ -197,12 +197,12 @@ export default function PacificaLandingPage() {
             <Pill tone="ember">Agent Skill</Pill>
           </div>
           <h1 className="font-display mt-7 max-w-5xl text-[48px] font-extrabold leading-[0.92] tracking-[-0.065em] text-[#f7f1df] md:text-[92px] md:leading-[0.88] md:tracking-[-0.09em]">
-            Account health for traders and AI agents.
+            Your Pacifica trading history, turned into personal risk guardrails.
           </h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-[#c7d0c6]">
-            A Pacifica-native decision layer that scores live account health,
-            simulates what-if trades, builds de-risk plans, and saves desks into a
-            repeatable watch workflow before anyone adds leverage.
+            Pacifica Account Health learns a trader&apos;s recent posture from Pacifica
+            account history, generates a live risk profile, simulates what-if trades,
+            and keeps those guardrails active before anyone adds leverage.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -227,7 +227,7 @@ export default function PacificaLandingPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-[#a8b6ac]">
-                  Live risk passport
+                  History-built profile
                 </div>
                 <div className="mt-4 flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ff7a59] text-[#07100f]">
@@ -235,27 +235,27 @@ export default function PacificaLandingPage() {
                   </div>
                   <div>
                     <div className="font-display text-3xl font-bold tracking-[-0.055em] text-[#ffe0d8]">
-                      High risk
+                      Balanced profile
                     </div>
-                    <div className="text-sm text-[#a8b6ac]">BTC drives the account health score</div>
+                    <div className="text-sm text-[#a8b6ac]">Generated from recent Pacifica behavior</div>
                   </div>
                 </div>
               </div>
               <div className="rounded-full border border-[#65f3e0]/25 bg-[#65f3e0]/10 px-4 py-2 font-mono text-sm text-[#bafdf4]">
-                49 / 100
+                8x max exposure
               </div>
             </div>
 
             <div className="mt-6 rounded-[26px] border border-[#ff7a59]/20 bg-[#ff7a59]/8 p-5 text-sm leading-7 text-[#ffe0d8]">
-              BTC is about 7.6% from liquidation and exposure is about 11.8x
-              account equity. Do not add leverage.
+              Recent size, drawdown, and carry patterns say this desk should stay
+              under roughly 8x exposure with at least a 9% liquidation buffer.
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Metric label="Equity" value="~$10" />
-              <Metric label="BTC exposure" value="~$120" />
-              <Metric label="Exposure / equity" value="~11.8x" />
-              <Metric label="Liq buffer" value="~7.6%" />
+              <Metric label="Profile" value="Balanced" />
+              <Metric label="Score floor" value="70+" />
+              <Metric label="Exposure cap" value="8x" />
+              <Metric label="Liq floor" value="9%" />
             </div>
           </div>
         </div>
@@ -265,19 +265,19 @@ export default function PacificaLandingPage() {
         <AudienceCard
           icon={WalletCards}
           title="For traders"
-          body="Review the live desk, test a trade in Scenario Lab, and pick the cleanest action path before sending an order."
+          body="Generate a risk profile from recent Pacifica behavior, test a trade in Scenario Lab, and pick the cleanest action path before sending an order."
           accent="#65f3e0"
         />
         <AudienceCard
           icon={Bot}
           title="For agents"
-          body="Install skill.md so AI assistants can check risk, refuse unsafe leverage, and stay aligned with the same product logic."
+          body="Install skill.md so AI assistants can read the same history-built risk profile, refuse unsafe leverage, and stay aligned with the same product logic."
           accent="#d8ff6a"
         />
         <AudienceCard
           icon={DatabaseZap}
           title="For builders"
-          body="Use one API response for live posture, then layer on scenario simulation, planning, and alert workflows in the app shell."
+          body="Use Pacifica REST data to turn raw history into personal guardrails, then layer on scenario simulation, planning, and alert workflows."
           accent="#ff7a59"
         />
       </section>
@@ -290,8 +290,9 @@ export default function PacificaLandingPage() {
           </h2>
           <p className="mt-5 text-base leading-8 text-[#a8b6ac]">
             The skill teaches agents when to ask for a Pacifica wallet, how to call the
-            API, how to classify high-risk accounts, and how to produce a concise risk
-            report without pretending to be financial advice.
+            API, how to generate a history-based risk profile, how to classify risky
+            desks, and how to produce a concise risk report without pretending to be
+            financial advice.
           </p>
           <div className="mt-7 grid gap-3">
             <Step number="1" title="Download skill.md" body="The skill is served from the same production app." />
@@ -317,8 +318,8 @@ export default function PacificaLandingPage() {
           </h2>
           <p className="mt-5 text-sm leading-7 text-[#a8b6ac]">
             The UI and skill both use the same Pacifica Account Health API. That keeps
-            the product honest: the agent report is derived from the same data a human
-            sees in the dashboard.
+            the product honest: the generated risk profile and the agent report are
+            derived from the same Pacifica history a human sees in the workspace.
           </p>
         </div>
       </section>
@@ -332,9 +333,9 @@ export default function PacificaLandingPage() {
                 Risk data, not decoration.
               </h2>
               <p className="mt-5 text-base leading-8 text-[#a8b6ac]">
-                The product combines live Pacifica account state, market context,
-                liquidation distance, and carry cost into one decision layer. The same
-                logic powers the UI, API, and agent skill.
+                The product combines Pacifica account history, live posture, market
+                context, liquidation distance, and carry cost into one decision layer.
+                The same logic powers the UI, API, and agent skill.
               </p>
             </div>
             <div className="grid gap-3">

@@ -8,11 +8,11 @@
 ![Mode](https://img.shields.io/badge/Modes-Live%20Account%20%7C%20Sample%20Mode-2563eb)
 ![Refresh](https://img.shields.io/badge/Refresh-20s%20auto--refresh-0ea5e9)
 
-Know your Pacifica liquidation risk before adding leverage.
+Your Pacifica trading history, turned into personal risk guardrails.
 
-Pacifica Account Health is a live risk workspace for Pacifica perpetuals accounts. It turns account equity, position exposure, liquidation distance, funding, recent fills, and market context into one decision loop:
+Pacifica Account Health is a live risk workspace for Pacifica perpetuals accounts. It turns recent account history, position exposure, liquidation distance, funding, recent fills, and market context into one decision loop:
 
-**What is the desk risk right now, what happens if I change it, and which path is safest next?**
+**What risk posture does this trader usually run, what is the desk risk right now, what happens if I change it, and which path is safest next?**
 
 It also ships as an agent-readable skill:
 
@@ -31,7 +31,7 @@ The app opens on a real Pacifica account and immediately explains:
 - liquidation buffer
 - scenario lab for adds, reductions, collateral top-ups, and rotations
 - planner workspace with three de-risk paths
-- saved desk watches with alert thresholds
+- history-built risk profiles and saved desk watches
 - live data proof from Pacifica REST endpoints
 
 For the current live account demo, the product detects that the BTC position is the main risk driver: exposure is around `11x` account equity and the liquidation buffer is below the high-risk threshold. The workspace recommends not adding leverage, shows how much BTC to trim or how much collateral to add, and lets the user save this desk into a threshold-based watchlist.
